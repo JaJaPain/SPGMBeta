@@ -106,7 +106,7 @@ func _create_target_panel():
 	vbox.add_child(target_action_box)
 	
 	var app_btn = Button.new()
-	app_btn.text = "Approach"
+	app_btn.text = "Fly to"
 	app_btn.pressed.connect(func(): if GlobalState.player: GlobalState.player.set("nav_mode", "APPROACH"))
 	target_action_box.add_child(app_btn)
 	
@@ -192,7 +192,7 @@ func _create_context_menu():
 	context_panel.add_child(vbox)
 	
 	var action_app = Button.new()
-	action_app.text = "Approach"
+	action_app.text = "Fly to"
 	action_app.pressed.connect(func():
 		if GlobalState.player: GlobalState.player.set("nav_mode", "APPROACH")
 		context_panel.visible = false

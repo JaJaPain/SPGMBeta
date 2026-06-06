@@ -12,6 +12,7 @@ var fire_cooldown: float = 0.0
 var camera_aligned: bool = true
 var last_nav_mode: String = "MANUAL"
 var rmb_down_time: float = 0.0
+var last_target: Node3D = null
 
 @onready var visual: Node3D = $Visual
 @onready var mining_laser: MeshInstance3D = $MiningLaser
@@ -70,6 +71,7 @@ func _input(event: InputEvent):
 		camera_pivot.rotation.y -= event.relative.x * 0.003
 		camera_pivot.rotation.x -= event.relative.y * 0.003
 		camera_pivot.rotation.x = clamp(camera_pivot.rotation.x, -deg_to_rad(80), deg_to_rad(80))
+		camera_aligned = true # Release camera alignment control
 		
 	# Left Click & Double-click
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
@@ -113,6 +115,12 @@ func _physics_process(delta: float):
 	camera_pivot.global_position = global_position
 	
 	# Autopilot Camera Auto-facing
+	var current_target = GlobalState.active_target
+	if current_target != last_target:
+		if nav_mode != "MANUAL" and current_target != null:
+			camera_aligned = false
+		last_target = current_target
+		
 	if nav_mode != last_nav_mode:
 		if nav_mode != "MANUAL":
 			camera_aligned = false
