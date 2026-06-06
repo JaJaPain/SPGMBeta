@@ -1,8 +1,8 @@
 extends Node3D
 
 @onready var ui_manager: Control = $CanvasLayer/UIManager
-@onready var gas_giant: MeshInstance3D = $GasGiant
-@onready var rocky_planet: MeshInstance3D = $RockyPlanet
+@onready var gas_giant: Node3D = $GasGiant
+@onready var rocky_planet: Node3D = $RockyPlanet
 @onready var station: StaticBody3D = $Station
 
 var asteroid_scene = preload("res://scenes/asteroid.tscn")
@@ -12,11 +12,11 @@ func _ready():
 	# Seed random number generator
 	randomize()
 	
-	# Spawn Asteroid rings around Gas Giant
-	_spawn_asteroid_ring(gas_giant.global_position, 120.0, 30.0, 75, "GasGiantBelt")
+	# Spawn Asteroid rings around Gas Giant (radius 600, ring at 850, width 150)
+	_spawn_asteroid_ring(gas_giant.global_position, 850.0, 150.0, 75, "GasGiantBelt")
 	
-	# Spawn Asteroid rings around Rocky Planet
-	_spawn_asteroid_ring(rocky_planet.global_position, 85.0, 20.0, 45, "RockyBelt")
+	# Spawn Asteroid rings around Rocky Planet (radius 250, ring at 370, width 80)
+	_spawn_asteroid_ring(rocky_planet.global_position, 370.0, 80.0, 45, "RockyBelt")
 	
 	# Spawn NPC Ships
 	_spawn_npc("caldari", Vector3(15, 0, 50), 12.0)
@@ -42,6 +42,15 @@ func _spawn_asteroid_ring(center: Vector3, radius: float, width: float, count: i
 		
 		var ast = asteroid_scene.instantiate()
 		ast.name = prefix + "_Asteroid_" + str(i)
+		
+		# Setup orbiting variables on the asteroid
+		ast.orbit_center = center
+		ast.orbit_radius = r
+		ast.orbit_speed = randf_range(0.005, 0.015) # Slow, majestic orbital speed
+		ast.current_angle = angle
+		ast.orbit_y = y
+		ast.is_orbiting = true
+		
 		add_child(ast)
 		ast.global_position = Vector3(x, y, z)
 
