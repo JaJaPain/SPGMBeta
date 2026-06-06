@@ -36,6 +36,9 @@ var btn_type: Button
 # Resize parameters
 var is_resizing: bool = false
 const RESIZE_BORDER_WIDTH := 6.0
+var resize_handle: Control
+var drag_start_mouse_x: float = 0.0
+var drag_start_anchor_left: float = 0.0
 
 func _ready():
 	# Configure layout
@@ -65,9 +68,6 @@ func _process(_delta):
 	
 	# Update overview list item distances
 	_update_overview_distances()
-	
-	# Handle drag to resize
-	_handle_resize_hover()
 
 func _create_hud():
 	hud_panel = Panel.new()
@@ -96,19 +96,19 @@ func _create_hud():
 
 func _create_target_panel():
 	target_panel = Panel.new()
+	add_child(target_panel)
 	target_panel.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE, Control.PRESET_MODE_MINSIZE, 10)
 	target_panel.anchor_left = 0.35
 	target_panel.anchor_right = 0.65
 	target_panel.anchor_top = 0.02
 	target_panel.anchor_bottom = 0.15
 	target_panel.grow_horizontal = Control.GROW_DIRECTION_BOTH
-	add_child(target_panel)
 	
 	var vbox = VBoxContainer.new()
+	target_panel.add_child(vbox)
 	vbox.set_anchors_preset(Control.PRESET_FULL_RECT)
 	vbox.grow_horizontal = Control.GROW_DIRECTION_BOTH
 	vbox.grow_vertical = Control.GROW_DIRECTION_BOTH
-	target_panel.add_child(vbox)
 	
 	target_label = Label.new()
 	target_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -133,15 +133,24 @@ func _create_target_panel():
 
 func _create_overview():
 	overview_panel = Panel.new()
+	add_child(overview_panel)
 	overview_panel.anchor_left = 0.78
 	overview_panel.anchor_right = 0.98
 	overview_panel.anchor_top = 0.05
 	overview_panel.anchor_bottom = 0.65
-	add_child(overview_panel)
 	
 	var vbox = VBoxContainer.new()
-	vbox.set_anchors_preset(Control.PRESET_FULL_RECT)
 	overview_panel.add_child(vbox)
+	vbox.set_anchors_preset(Control.PRESET_FULL_RECT)
+	
+	# Create a dedicated resize handle on the left edge
+	resize_handle = Control.new()
+	resize_handle.name = "ResizeHandle"
+	resize_handle.custom_minimum_size = Vector2(8, 0)
+	overview_panel.add_child(resize_handle)
+	resize_handle.set_anchors_preset(Control.PRESET_LEFT_WIDE)
+	resize_handle.mouse_default_cursor_shape = Control.CURSOR_HSIZE
+	resize_handle.gui_input.connect(_on_resize_handle_input)
 	
 	var title = Label.new()
 	title.text = "OVERVIEW"
@@ -151,6 +160,7 @@ func _create_overview():
 	# Create Header HBox for sorting
 	var header_hbox = HBoxContainer.new()
 	header_hbox.custom_minimum_size = Vector2(0, 25)
+	header_hbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	vbox.add_child(header_hbox)
 	
 	btn_name = Button.new()
@@ -178,6 +188,7 @@ func _create_overview():
 	
 	var scroll = ScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	vbox.add_child(scroll)
 	
 	overview_list = VBoxContainer.new()
@@ -200,16 +211,16 @@ func _update_header_labels():
 
 func _create_dock_menu():
 	dock_panel = Panel.new()
+	add_child(dock_panel)
 	dock_panel.anchor_left = 0.3
 	dock_panel.anchor_right = 0.7
 	dock_panel.anchor_top = 0.25
 	dock_panel.anchor_bottom = 0.75
-	add_child(dock_panel)
 	
 	var vbox = VBoxContainer.new()
+	dock_panel.add_child(vbox)
 	vbox.set_anchors_preset(Control.PRESET_FULL_RECT)
 	vbox.alignment = BoxContainer.ALIGNMENT_CENTER
-	dock_panel.add_child(vbox)
 	
 	dock_label = Label.new()
 	dock_label.text = "STATION SERVICES"
@@ -240,12 +251,12 @@ func _create_dock_menu():
 
 func _create_context_menu():
 	context_panel = Panel.new()
-	context_panel.custom_minimum_size = Vector2(150, 160)
 	add_child(context_panel)
+	context_panel.custom_minimum_size = Vector2(150, 160)
 	
 	var vbox = VBoxContainer.new()
-	vbox.set_anchors_preset(Control.PRESET_FULL_RECT)
 	context_panel.add_child(vbox)
+	vbox.set_anchors_preset(Control.PRESET_FULL_RECT)
 	
 	var action_app = Button.new()
 	action_app.text = "Fly to"
@@ -289,13 +300,13 @@ func _create_context_menu():
 
 func _create_pause_menu():
 	pause_panel = Panel.new()
-	pause_panel.set_anchors_preset(Control.PRESET_FULL_RECT)
 	add_child(pause_panel)
+	pause_panel.set_anchors_preset(Control.PRESET_FULL_RECT)
 	
 	var vbox = VBoxContainer.new()
+	pause_panel.add_child(vbox)
 	vbox.set_anchors_preset(Control.PRESET_FULL_RECT)
 	vbox.alignment = BoxContainer.ALIGNMENT_CENTER
-	pause_panel.add_child(vbox)
 	
 	var title = Label.new()
 	title.text = "GAME PAUSED"
@@ -329,13 +340,13 @@ func _create_pause_menu():
 
 func _create_death_screen():
 	death_panel = Panel.new()
-	death_panel.set_anchors_preset(Control.PRESET_FULL_RECT)
 	add_child(death_panel)
+	death_panel.set_anchors_preset(Control.PRESET_FULL_RECT)
 	
 	var vbox = VBoxContainer.new()
+	death_panel.add_child(vbox)
 	vbox.set_anchors_preset(Control.PRESET_FULL_RECT)
 	vbox.alignment = BoxContainer.ALIGNMENT_CENTER
-	death_panel.add_child(vbox)
 	
 	var msg = Label.new()
 	msg.text = "SHIP DESTROYED\nPress ESC to Quit"
@@ -358,13 +369,15 @@ func update_overview_list(entities: Array):
 		if entity and is_instance_valid(entity) and entity != GlobalState.player:
 			var btn = Button.new()
 			btn.custom_minimum_size = Vector2(0, 30)
+			btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			btn.pressed.connect(func(): GlobalState.active_target = entity)
+			overview_list.add_child(btn)
 			
 			# HBox inside the button for spreadsheet column layout
 			var hbox = HBoxContainer.new()
+			btn.add_child(hbox)
 			hbox.set_anchors_preset(Control.PRESET_FULL_RECT)
 			hbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
-			btn.add_child(hbox)
 			
 			var name_lbl = Label.new()
 			name_lbl.text = "  " + entity.name # Add a little padding space
@@ -401,8 +414,6 @@ func update_overview_list(entities: Array):
 			btn.set_meta("type_str", type_str)
 			btn.set_meta("distance_val", 0.0) # Updated dynamically in _update_overview_distances
 			btn.set_meta("dist_label_ref", dist_lbl)
-			
-			overview_list.add_child(btn)
 
 func _update_overview_distances():
 	if not GlobalState.player or not is_instance_valid(GlobalState.player): return
@@ -539,33 +550,27 @@ func _input(event: InputEvent):
 		if not event.pressed:
 			is_resizing = false
 
-func _handle_resize_hover():
-	if is_resizing:
-		var mouse_x = get_viewport().get_mouse_position().x
-		var viewport_w = get_viewport().get_visible_rect().size.x
-		
-		# Allow resize from 250px to 800px width
-		var min_x = viewport_w - 800.0
-		var max_x = viewport_w - 250.0
-		var target_x = clamp(mouse_x, min_x, max_x)
-		
-		overview_panel.anchor_left = target_x / viewport_w
-		return
-
-	var mouse_pos = get_viewport().get_mouse_position()
-	var panel_rect = overview_panel.get_global_rect()
-	
-	# Detect mouse near the left border of the panel
-	var on_left_edge = (
-		mouse_pos.x >= panel_rect.position.x - RESIZE_BORDER_WIDTH / 2.0 and
-		mouse_pos.x <= panel_rect.position.x + RESIZE_BORDER_WIDTH / 2.0 and
-		mouse_pos.y >= panel_rect.position.y and
-		mouse_pos.y <= panel_rect.position.y + panel_rect.size.y
-	)
-	
-	if on_left_edge:
-		overview_panel.mouse_default_cursor_shape = Control.CURSOR_HSIZE
-		if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
+func _on_resize_handle_input(event: InputEvent):
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+		if event.pressed:
 			is_resizing = true
-	else:
-		overview_panel.mouse_default_cursor_shape = Control.CURSOR_ARROW
+			drag_start_mouse_x = get_viewport().get_mouse_position().x
+			drag_start_anchor_left = overview_panel.anchor_left
+		else:
+			is_resizing = false
+	elif event is InputEventMouseMotion and is_resizing:
+		var mouse_x = get_viewport().get_mouse_position().x
+		var delta_x = mouse_x - drag_start_mouse_x
+		var viewport_w = get_viewport().get_visible_rect().size.x
+		if viewport_w > 0:
+			var target_anchor_left = drag_start_anchor_left + (delta_x / viewport_w)
+			
+			# Keep width between 250px and 800px
+			var right_pixel = overview_panel.anchor_right * viewport_w
+			var min_left_pixel = right_pixel - 800.0
+			var max_left_pixel = right_pixel - 250.0
+			
+			var target_left_pixel = target_anchor_left * viewport_w
+			target_left_pixel = clamp(target_left_pixel, min_left_pixel, max_left_pixel)
+			
+			overview_panel.anchor_left = target_left_pixel / viewport_w
