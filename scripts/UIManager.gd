@@ -26,6 +26,13 @@ var context_action_btn: Button
 
 var current_station: Node3D = null
 
+# Sorting parameters
+var sort_column: String = "distance"
+var sort_ascending: bool = true
+var btn_name: Button
+var btn_dist: Button
+var btn_type: Button
+
 func _ready():
 	# Configure layout
 	anchors_preset = Control.PRESET_FULL_RECT
@@ -134,6 +141,31 @@ func _create_overview():
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	vbox.add_child(title)
 	
+	# Create Header HBox for sorting
+	var header_hbox = HBoxContainer.new()
+	header_hbox.custom_minimum_size = Vector2(0, 25)
+	vbox.add_child(header_hbox)
+	
+	btn_name = Button.new()
+	btn_name.text = "Name"
+	btn_name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	btn_name.pressed.connect(func(): _on_header_clicked("name"))
+	header_hbox.add_child(btn_name)
+	
+	btn_dist = Button.new()
+	btn_dist.text = "Distance"
+	btn_dist.custom_minimum_size = Vector2(80, 0)
+	btn_dist.pressed.connect(func(): _on_header_clicked("distance"))
+	header_hbox.add_child(btn_dist)
+	
+	btn_type = Button.new()
+	btn_type.text = "Type"
+	btn_type.custom_minimum_size = Vector2(100, 0)
+	btn_type.pressed.connect(func(): _on_header_clicked("type"))
+	header_hbox.add_child(btn_type)
+	
+	_update_header_labels()
+	
 	var scroll = ScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	vbox.add_child(scroll)
@@ -141,6 +173,20 @@ func _create_overview():
 	overview_list = VBoxContainer.new()
 	overview_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll.add_child(overview_list)
+
+func _on_header_clicked(column: String):
+	if sort_column == column:
+		sort_ascending = not sort_ascending
+	else:
+		sort_column = column
+		sort_ascending = true
+	_update_header_labels()
+	_update_overview_distances()
+
+func _update_header_labels():
+	btn_name.text = "Name" + (" ▲" if sort_column == "name" and sort_ascending else " ▼" if sort_column == "name" else "")
+	btn_dist.text = "Distance" + (" ▲" if sort_column == "distance" and sort_ascending else " ▼" if sort_column == "distance" else "")
+	btn_type.text = "Type" + (" ▲" if sort_column == "type" and sort_ascending else " ▼" if sort_column == "type" else "")
 
 func _create_dock_menu():
 	dock_panel = Panel.new()
@@ -301,7 +347,28 @@ func update_overview_list(entities: Array):
 	for entity in entities:
 		if entity and is_instance_valid(entity) and entity != GlobalState.player:
 			var btn = Button.new()
-			var name_str = entity.name
+			btn.custom_minimum_size = Vector2(0, 30)
+			btn.pressed.connect(func(): GlobalState.active_target = entity)
+			
+			# HBox inside the button for spreadsheet column layout
+			var hbox = HBoxContainer.new()
+			hbox.set_anchors_preset(Control.PRESET_FULL_RECT)
+			hbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			btn.add_child(hbox)
+			
+			var name_lbl = Label.new()
+			name_lbl.text = " " + entity.name # Add a little padding space
+			name_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			name_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			hbox.add_child(name_lbl)
+			
+			var dist_lbl = Label.new()
+			dist_lbl.text = "0m"
+			dist_lbl.custom_minimum_size = Vector2(80, 0)
+			dist_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			hbox.add_child(dist_lbl)
+			
+			var type_lbl = Label.new()
 			var type_str = "Celestial"
 			if entity.is_in_group("asteroid"):
 				type_str = "Asteroid"
@@ -309,27 +376,58 @@ func update_overview_list(entities: Array):
 				type_str = "Space Station"
 			elif entity.is_in_group("ship"):
 				type_str = "NPC Ship (" + entity.get("faction").to_upper() + ")"
-				
-			btn.text = name_str + " [" + type_str + "]"
-			btn.custom_minimum_size = Vector2(0, 30)
-			btn.pressed.connect(func(): GlobalState.active_target = entity)
+			
+			type_lbl.text = type_str
+			type_lbl.custom_minimum_size = Vector2(100, 0)
+			type_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			hbox.add_child(type_lbl)
+			
+			# Meta parameters for sorting and updating
 			btn.set_meta("entity_ref", entity)
+			btn.set_meta("entity_name", entity.name)
 			btn.set_meta("type_str", type_str)
+			btn.set_meta("distance_val", 0.0) # Updated dynamically in _update_overview_distances
+			btn.set_meta("dist_label_ref", dist_lbl)
+			
 			overview_list.add_child(btn)
 
 func _update_overview_distances():
 	if not GlobalState.player or not is_instance_valid(GlobalState.player): return
 	var p_pos = GlobalState.player.global_position
 	
+	# Update all distances first
 	for btn in overview_list.get_children():
 		if btn is Button:
 			var entity = btn.get_meta("entity_ref")
 			if entity and is_instance_valid(entity):
 				var dist = p_pos.distance_to(entity.global_position)
-				var type_str = btn.get_meta("type_str")
-				btn.text = entity.name + " (" + str(int(dist)) + "m) [" + type_str + "]"
+				btn.set_meta("distance_val", dist)
+				var dist_lbl = btn.get_meta("dist_label_ref")
+				if is_instance_valid(dist_lbl):
+					dist_lbl.text = str(int(dist)) + "m"
 			else:
 				btn.queue_free()
+				
+	# Now sort children
+	var children = overview_list.get_children()
+	children.sort_custom(func(a, b):
+		if sort_column == "name":
+			var name_a = a.get_meta("entity_name").to_lower()
+			var name_b = b.get_meta("entity_name").to_lower()
+			return name_a < name_b if sort_ascending else name_a > name_b
+		elif sort_column == "type":
+			var type_a = a.get_meta("type_str").to_lower()
+			var type_b = b.get_meta("type_str").to_lower()
+			return type_a < type_b if sort_ascending else type_a > type_b
+		else: # distance
+			var dist_a = a.get_meta("distance_val")
+			var dist_b = b.get_meta("distance_val")
+			return dist_a < dist_b if sort_ascending else dist_a > dist_b
+	)
+	
+	# Apply sorted order
+	for i in range(children.size()):
+		overview_list.move_child(children[i], i)
 
 # Target signal callbacks
 func _on_target_changed(new_target: Node3D):
