@@ -33,6 +33,10 @@ var btn_name: Button
 var btn_dist: Button
 var btn_type: Button
 
+# Resize parameters
+var is_resizing: bool = false
+const RESIZE_BORDER_WIDTH := 6.0
+
 func _ready():
 	# Configure layout
 	anchors_preset = Control.PRESET_FULL_RECT
@@ -61,6 +65,9 @@ func _process(_delta):
 	
 	# Update overview list item distances
 	_update_overview_distances()
+	
+	# Handle drag to resize
+	_handle_resize_hover()
 
 func _create_hud():
 	hud_panel = Panel.new()
@@ -149,18 +156,21 @@ func _create_overview():
 	btn_name = Button.new()
 	btn_name.text = "Name"
 	btn_name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	btn_name.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	btn_name.pressed.connect(func(): _on_header_clicked("name"))
 	header_hbox.add_child(btn_name)
 	
 	btn_dist = Button.new()
 	btn_dist.text = "Distance"
-	btn_dist.custom_minimum_size = Vector2(80, 0)
+	btn_dist.custom_minimum_size = Vector2(110, 0)
+	btn_dist.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	btn_dist.pressed.connect(func(): _on_header_clicked("distance"))
 	header_hbox.add_child(btn_dist)
 	
 	btn_type = Button.new()
 	btn_type.text = "Type"
-	btn_type.custom_minimum_size = Vector2(100, 0)
+	btn_type.custom_minimum_size = Vector2(160, 0)
+	btn_type.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	btn_type.pressed.connect(func(): _on_header_clicked("type"))
 	header_hbox.add_child(btn_type)
 	
@@ -357,14 +367,16 @@ func update_overview_list(entities: Array):
 			btn.add_child(hbox)
 			
 			var name_lbl = Label.new()
-			name_lbl.text = " " + entity.name # Add a little padding space
+			name_lbl.text = "  " + entity.name # Add a little padding space
 			name_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 			name_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 			hbox.add_child(name_lbl)
 			
 			var dist_lbl = Label.new()
-			dist_lbl.text = "0m"
-			dist_lbl.custom_minimum_size = Vector2(80, 0)
+			dist_lbl.text = "  0m"
+			dist_lbl.custom_minimum_size = Vector2(110, 0)
+			dist_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 			dist_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 			hbox.add_child(dist_lbl)
 			
@@ -377,8 +389,9 @@ func update_overview_list(entities: Array):
 			elif entity.is_in_group("ship"):
 				type_str = "NPC Ship (" + entity.get("faction").to_upper() + ")"
 			
-			type_lbl.text = type_str
-			type_lbl.custom_minimum_size = Vector2(100, 0)
+			type_lbl.text = "  " + type_str
+			type_lbl.custom_minimum_size = Vector2(160, 0)
+			type_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 			type_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 			hbox.add_child(type_lbl)
 			
@@ -404,7 +417,7 @@ func _update_overview_distances():
 				btn.set_meta("distance_val", dist)
 				var dist_lbl = btn.get_meta("dist_label_ref")
 				if is_instance_valid(dist_lbl):
-					dist_lbl.text = str(int(dist)) + "m"
+					dist_lbl.text = "  " + str(int(dist)) + "m"
 			else:
 				btn.queue_free()
 				
@@ -520,3 +533,39 @@ func show_context_menu(entity: Node3D):
 
 func show_death_screen():
 	death_panel.visible = true
+
+func _input(event: InputEvent):
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+		if not event.pressed:
+			is_resizing = false
+
+func _handle_resize_hover():
+	if is_resizing:
+		var mouse_x = get_viewport().get_mouse_position().x
+		var viewport_w = get_viewport().get_visible_rect().size.x
+		
+		# Allow resize from 250px to 800px width
+		var min_x = viewport_w - 800.0
+		var max_x = viewport_w - 250.0
+		var target_x = clamp(mouse_x, min_x, max_x)
+		
+		overview_panel.anchor_left = target_x / viewport_w
+		return
+
+	var mouse_pos = get_viewport().get_mouse_position()
+	var panel_rect = overview_panel.get_global_rect()
+	
+	# Detect mouse near the left border of the panel
+	var on_left_edge = (
+		mouse_pos.x >= panel_rect.position.x - RESIZE_BORDER_WIDTH / 2.0 and
+		mouse_pos.x <= panel_rect.position.x + RESIZE_BORDER_WIDTH / 2.0 and
+		mouse_pos.y >= panel_rect.position.y and
+		mouse_pos.y <= panel_rect.position.y + panel_rect.size.y
+	)
+	
+	if on_left_edge:
+		overview_panel.mouse_default_cursor_shape = Control.CURSOR_HSIZE
+		if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
+			is_resizing = true
+	else:
+		overview_panel.mouse_default_cursor_shape = Control.CURSOR_ARROW
