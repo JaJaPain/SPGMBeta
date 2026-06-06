@@ -107,6 +107,10 @@ func _create_target_panel():
 	var vbox = VBoxContainer.new()
 	target_panel.add_child(vbox)
 	vbox.set_anchors_preset(Control.PRESET_FULL_RECT)
+	vbox.offset_left = 0
+	vbox.offset_right = 0
+	vbox.offset_top = 0
+	vbox.offset_bottom = 0
 	vbox.grow_horizontal = Control.GROW_DIRECTION_BOTH
 	vbox.grow_vertical = Control.GROW_DIRECTION_BOTH
 	
@@ -138,17 +142,28 @@ func _create_overview():
 	overview_panel.anchor_right = 0.98
 	overview_panel.anchor_top = 0.05
 	overview_panel.anchor_bottom = 0.65
+	overview_panel.offset_left = 0
+	overview_panel.offset_right = 0
+	overview_panel.offset_top = 0
+	overview_panel.offset_bottom = 0
 	
 	var vbox = VBoxContainer.new()
 	overview_panel.add_child(vbox)
 	vbox.set_anchors_preset(Control.PRESET_FULL_RECT)
+	vbox.offset_left = 0
+	vbox.offset_right = 0
+	vbox.offset_top = 0
+	vbox.offset_bottom = 0
 	
 	# Create a dedicated resize handle on the left edge
 	resize_handle = Control.new()
 	resize_handle.name = "ResizeHandle"
-	resize_handle.custom_minimum_size = Vector2(8, 0)
 	overview_panel.add_child(resize_handle)
 	resize_handle.set_anchors_preset(Control.PRESET_LEFT_WIDE)
+	resize_handle.offset_left = 0
+	resize_handle.offset_right = 8
+	resize_handle.offset_top = 0
+	resize_handle.offset_bottom = 0
 	resize_handle.mouse_default_cursor_shape = Control.CURSOR_HSIZE
 	resize_handle.gui_input.connect(_on_resize_handle_input)
 	
@@ -216,10 +231,18 @@ func _create_dock_menu():
 	dock_panel.anchor_right = 0.7
 	dock_panel.anchor_top = 0.25
 	dock_panel.anchor_bottom = 0.75
+	dock_panel.offset_left = 0
+	dock_panel.offset_right = 0
+	dock_panel.offset_top = 0
+	dock_panel.offset_bottom = 0
 	
 	var vbox = VBoxContainer.new()
 	dock_panel.add_child(vbox)
 	vbox.set_anchors_preset(Control.PRESET_FULL_RECT)
+	vbox.offset_left = 0
+	vbox.offset_right = 0
+	vbox.offset_top = 0
+	vbox.offset_bottom = 0
 	vbox.alignment = BoxContainer.ALIGNMENT_CENTER
 	
 	dock_label = Label.new()
@@ -257,6 +280,10 @@ func _create_context_menu():
 	var vbox = VBoxContainer.new()
 	context_panel.add_child(vbox)
 	vbox.set_anchors_preset(Control.PRESET_FULL_RECT)
+	vbox.offset_left = 0
+	vbox.offset_right = 0
+	vbox.offset_top = 0
+	vbox.offset_bottom = 0
 	
 	var action_app = Button.new()
 	action_app.text = "Fly to"
@@ -302,10 +329,18 @@ func _create_pause_menu():
 	pause_panel = Panel.new()
 	add_child(pause_panel)
 	pause_panel.set_anchors_preset(Control.PRESET_FULL_RECT)
+	pause_panel.offset_left = 0
+	pause_panel.offset_right = 0
+	pause_panel.offset_top = 0
+	pause_panel.offset_bottom = 0
 	
 	var vbox = VBoxContainer.new()
 	pause_panel.add_child(vbox)
 	vbox.set_anchors_preset(Control.PRESET_FULL_RECT)
+	vbox.offset_left = 0
+	vbox.offset_right = 0
+	vbox.offset_top = 0
+	vbox.offset_bottom = 0
 	vbox.alignment = BoxContainer.ALIGNMENT_CENTER
 	
 	var title = Label.new()
@@ -342,10 +377,18 @@ func _create_death_screen():
 	death_panel = Panel.new()
 	add_child(death_panel)
 	death_panel.set_anchors_preset(Control.PRESET_FULL_RECT)
+	death_panel.offset_left = 0
+	death_panel.offset_right = 0
+	death_panel.offset_top = 0
+	death_panel.offset_bottom = 0
 	
 	var vbox = VBoxContainer.new()
 	death_panel.add_child(vbox)
 	vbox.set_anchors_preset(Control.PRESET_FULL_RECT)
+	vbox.offset_left = 0
+	vbox.offset_right = 0
+	vbox.offset_top = 0
+	vbox.offset_bottom = 0
 	vbox.alignment = BoxContainer.ALIGNMENT_CENTER
 	
 	var msg = Label.new()
@@ -377,6 +420,10 @@ func update_overview_list(entities: Array):
 			var hbox = HBoxContainer.new()
 			btn.add_child(hbox)
 			hbox.set_anchors_preset(Control.PRESET_FULL_RECT)
+			hbox.offset_left = 0
+			hbox.offset_right = 0
+			hbox.offset_top = 0
+			hbox.offset_bottom = 0
 			hbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
 			
 			var name_lbl = Label.new()
