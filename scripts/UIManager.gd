@@ -39,6 +39,8 @@ const RESIZE_BORDER_WIDTH := 6.0
 var resize_handle: Control
 var drag_start_mouse_x: float = 0.0
 var drag_start_anchor_left: float = 0.0
+var sort_timer: float = 0.0
+const SORT_INTERVAL := 0.2
 
 func _ready():
 	# Configure layout
@@ -63,11 +65,11 @@ func _ready():
 	_on_cargo_changed(GlobalState.cargo)
 	_on_target_changed(GlobalState.active_target)
 
-func _process(_delta):
+func _process(delta):
 	if GlobalState.paused: return
 	
 	# Update overview list item distances
-	_update_overview_distances()
+	_update_overview_distances(delta)
 
 func _create_hud():
 	hud_panel = Panel.new()
@@ -462,7 +464,7 @@ func update_overview_list(entities: Array):
 			btn.set_meta("distance_val", 0.0) # Updated dynamically in _update_overview_distances
 			btn.set_meta("dist_label_ref", dist_lbl)
 
-func _update_overview_distances():
+func _update_overview_distances(delta: float = 999.0):
 	if not GlobalState.player or not is_instance_valid(GlobalState.player): return
 	var p_pos = GlobalState.player.global_position
 	
@@ -479,7 +481,13 @@ func _update_overview_distances():
 			else:
 				btn.queue_free()
 				
-	# Now sort children
+	# Periodically sort the children list to prevent layout thrashing
+	sort_timer += delta
+	if sort_timer >= SORT_INTERVAL:
+		sort_timer = 0.0
+		_sort_overview_list()
+
+func _sort_overview_list():
 	var children = overview_list.get_children()
 	children.sort_custom(func(a, b):
 		if sort_column == "name":
