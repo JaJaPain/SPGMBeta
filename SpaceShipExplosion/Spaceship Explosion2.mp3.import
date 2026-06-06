@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://ckq8mrtvk8tu0"
+path="res://.godot/imported/Spaceship Explosion2.mp3-9bfeec0d9c40fbff73d25ad03b42de44.mp3str"
+
+[deps]
+
+source_file="res://SpaceShipExplosion/Spaceship Explosion2.mp3"
+dest_files=["res://.godot/imported/Spaceship Explosion2.mp3-9bfeec0d9c40fbff73d25ad03b42de44.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

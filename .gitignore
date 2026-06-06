@@ -1,0 +1,9 @@
+# Godot-specific ignores
+.godot/
+
+# Large editor executables
+Godot/
+
+# OS-specific files
+.DS_Store
+Thumbs.db

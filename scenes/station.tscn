@@ -1,0 +1,41 @@
+[gd_scene load_steps=7 format=3]
+
+[ext_resource type="Script" path="res://scripts/Station.gd" id="1_script"]
+[ext_resource type="Texture2D" path="res://assets/station_tex.png" id="2_tex"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_1"]
+size = Vector3(35.0, 30.0, 35.0)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_st"]
+albedo_texture = ExtResource("2_tex")
+roughness = 0.5
+metallic = 0.8
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_1"]
+material = SubResource("StandardMaterial3D_st")
+top_radius = 4.0
+bottom_radius = 4.0
+height = 25.0
+radial_segments = 16
+
+[sub_resource type="TorusMesh" id="TorusMesh_1"]
+material = SubResource("StandardMaterial3D_st")
+inner_radius = 12.0
+outer_radius = 14.0
+ring_segments = 32
+ring_sides = 8
+
+[node name="Station" type="StaticBody3D" groups=["station"]]
+collision_layer = 4
+collision_mask = 3
+script = ExtResource("1_script")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+shape = SubResource("BoxShape3D_1")
+
+[node name="Core" type="MeshInstance3D" parent="."]
+mesh = SubResource("CylinderMesh_1")
+
+[node name="Ring" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.25, 0, 0, 0, 1, 0, 0, 0)
+mesh = SubResource("TorusMesh_1")

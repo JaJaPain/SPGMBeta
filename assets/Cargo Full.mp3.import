@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://cv3uwp7tg45ik"
+path="res://.godot/imported/Cargo Full.mp3-16f33acbfc6fc778905b1c9bc1d03ac0.mp3str"
+
+[deps]
+
+source_file="res://assets/Cargo Full.mp3"
+dest_files=["res://.godot/imported/Cargo Full.mp3-16f33acbfc6fc778905b1c9bc1d03ac0.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4
