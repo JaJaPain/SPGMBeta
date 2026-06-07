@@ -15,6 +15,8 @@ func _ready():
 	audio_player = AudioStreamPlayer.new()
 	audio_player.bus = "SFX"
 	add_child(audio_player)
+	
+	_check_and_start_tts_server()
 
 func play_dialogue_audio(text: String):
 	if is_requesting:
@@ -118,3 +120,32 @@ func load_wav_from_buffer(bytes: PackedByteArray) -> AudioStreamWAV:
 		stream.data = bytes.slice(44)
 		
 	return stream
+
+func _check_and_start_tts_server():
+	var check_http = HTTPRequest.new()
+	add_child(check_http)
+	check_http.timeout = 1.0 # 1 second timeout
+	check_http.request_completed.connect(func(result, response_code, headers, body):
+		check_http.queue_free()
+		if result != HTTPRequest.RESULT_SUCCESS:
+			print("[TTSInterface] Local TTS server not detected on port 5000. Launching it...")
+			_launch_tts_server_process()
+		else:
+			print("[TTSInterface] Local TTS server is already running on port 5000.")
+	)
+	
+	# Send a check request to the TTS server
+	var err = check_http.request(TTS_URL, ["Content-Type: application/json"], HTTPClient.METHOD_POST, "{}")
+	if err != OK:
+		check_http.queue_free()
+		_launch_tts_server_process()
+
+func _launch_tts_server_process():
+	var global_script_path = ProjectSettings.globalize_path("res://scripts/tts_server.py")
+	print("[TTSInterface] Sourced TTS server script path: ", global_script_path)
+	
+	var pid = OS.create_process("python", [global_script_path])
+	if pid > 0:
+		print("[TTSInterface] Successfully launched local TTS server background process (PID: ", pid, ")")
+	else:
+		print("[TTSInterface] Failed to launch local TTS server. Please ensure Python is installed and in PATH.")
