@@ -39,6 +39,17 @@ func _ready():
 	
 	# Populating Overview list
 	_populate_overview()
+	
+	# Spawn the salvager ship near space station
+	_spawn_salvager()
+	
+	# Setup spawn check Timer for replacing destroyed ships
+	var spawn_timer = Timer.new()
+	spawn_timer.name = "NPCSpawnTimer"
+	spawn_timer.wait_time = 30.0 # Check every 30 seconds
+	spawn_timer.autostart = true
+	spawn_timer.timeout.connect(_on_npc_spawn_timeout)
+	add_child(spawn_timer)
 
 func _spawn_asteroid_ring(center: Vector3, radius: float, width: float, count: int, prefix: String):
 	for i in range(count):
@@ -76,3 +87,51 @@ func _spawn_npc(faction_name: String, pos: Vector3, npc_speed: float):
 func _populate_overview():
 	if ui_manager and ui_manager.has_method("refresh_overview"):
 		ui_manager.refresh_overview()
+
+func _spawn_salvager():
+	var salvager_script = load("res://scripts/NPCSalvager.gd")
+	if salvager_script:
+		var salvager = CharacterBody3D.new()
+		salvager.set_script(salvager_script)
+		salvager.name = "NPC_Salvager"
+		add_child(salvager)
+		# Spawn near space station
+		if station:
+			salvager.global_position = station.global_position + Vector3(0, 0, 50.0)
+
+func _on_salvager_destroyed():
+	# Respawn after 30 seconds
+	var respawn_timer = get_tree().create_timer(30.0)
+	respawn_timer.timeout.connect(_spawn_salvager)
+
+func _on_npc_spawn_timeout():
+	if GlobalState.destroyed_ships_pool > 0:
+		GlobalState.destroyed_ships_pool -= 1
+		_spawn_npc_flying_in()
+
+func _spawn_npc_flying_in():
+	# Choose a random faction
+	var factions = ["zenith", "aurelia", "vanguard"]
+	var faction_name = factions[randi() % factions.size()]
+	
+	# Choose a random direction on XZ plane
+	var angle = randf() * TAU
+	var spawn_dist = 1100.0 # Spawn far in deep space
+	
+	# Choose a target patrol center in the inner system
+	var targets = [station.global_position, gas_giant.global_position, rocky_planet.global_position]
+	var patrol_dest = targets[randi() % targets.size()]
+	
+	# Calculate spawn position
+	var spawn_pos = patrol_dest + Vector3(cos(angle), 0, sin(angle)) * spawn_dist
+	
+	# Spawn NPC
+	var npc = npc_ship_scene.instantiate()
+	npc.faction = faction_name
+	npc.speed = 13.0 # Slightly faster speed for flying in
+	npc.name = faction_name.to_upper() + "_Incoming_" + str(randi() % 1000)
+	add_child(npc)
+	npc.global_position = spawn_pos
+	
+	# Set its patrol center to the destination so it flies in
+	npc.patrol_center = patrol_dest

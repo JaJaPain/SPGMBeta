@@ -6,9 +6,11 @@ var credits_label: Label
 var cargo_label: Label
 var cargo_bar: ProgressBar
 
-var target_panel: Panel
+var target_panel: PanelContainer
 var target_label: Label
+var target_icon: TextureRect
 var target_action_box: HBoxContainer
+var icons_sheet = preload("res://assets/icons.png")
 
 var overview_panel: Panel
 var overview_list: VBoxContainer
@@ -177,29 +179,41 @@ func _create_hud():
 	vbox.add_child(rep_lbl)
 
 func _create_target_panel():
-	target_panel = Panel.new()
+	target_panel = PanelContainer.new()
 	add_child(target_panel)
-	target_panel.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE, Control.PRESET_MODE_MINSIZE, 10)
 	target_panel.anchor_left = 0.35
 	target_panel.anchor_right = 0.65
 	target_panel.anchor_top = 0.02
-	target_panel.anchor_bottom = 0.15
+	target_panel.anchor_bottom = 0.02
 	target_panel.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	target_panel.grow_vertical = Control.GROW_DIRECTION_END
+	
+	var margin_container = MarginContainer.new()
+	target_panel.add_child(margin_container)
+	margin_container.add_theme_constant_override("margin_left", 12)
+	margin_container.add_theme_constant_override("margin_right", 12)
+	margin_container.add_theme_constant_override("margin_top", 8)
+	margin_container.add_theme_constant_override("margin_bottom", 8)
 	
 	var vbox = VBoxContainer.new()
-	target_panel.add_child(vbox)
-	vbox.set_anchors_preset(Control.PRESET_FULL_RECT)
-	vbox.offset_left = 0
-	vbox.offset_right = 0
-	vbox.offset_top = 0
-	vbox.offset_bottom = 0
-	vbox.grow_horizontal = Control.GROW_DIRECTION_BOTH
-	vbox.grow_vertical = Control.GROW_DIRECTION_BOTH
+	margin_container.add_child(vbox)
+	
+	var target_info_box = HBoxContainer.new()
+	target_info_box.alignment = BoxContainer.ALIGNMENT_CENTER
+	vbox.add_child(target_info_box)
+	
+	target_icon = TextureRect.new()
+	target_icon.custom_minimum_size = Vector2(40, 40)
+	target_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	target_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	target_icon.gui_input.connect(_on_target_icon_gui_input)
+	target_icon.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	target_info_box.add_child(target_icon)
 	
 	target_label = Label.new()
-	target_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	target_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	target_label.text = "No Target Selected"
-	vbox.add_child(target_label)
+	target_info_box.add_child(target_label)
 	
 	target_action_box = HBoxContainer.new()
 	target_action_box.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -716,6 +730,8 @@ func update_overview_list(entities: Array):
 				type_str = "Space Station"
 			elif entity.is_in_group("ship"):
 				type_str = "NPC Ship (" + entity.get("faction").to_upper() + ")"
+			elif entity.is_in_group("wreckage"):
+				type_str = "Wreckage"
 			
 			type_lbl.text = "  " + type_str
 			type_lbl.custom_minimum_size = Vector2(160, 0)
@@ -830,20 +846,51 @@ func _on_target_changed(new_target: Node3D):
 	if new_target and is_instance_valid(new_target):
 		target_panel.visible = true
 		var type_str = "Object"
+		var icon_index = 0 # Default to ship icon
+		
 		if new_target.is_in_group("asteroid"):
 			type_str = "Asteroid"
+			icon_index = 1
 		elif new_target.is_in_group("station"):
 			type_str = "Station"
+			icon_index = 2
 		elif new_target.is_in_group("ship"):
 			type_str = "Hostile NPCShip"
+			icon_index = 0
+		elif new_target.is_in_group("wreckage"):
+			type_str = "Wreckage"
+			icon_index = 4
+		elif new_target.name == "GasGiant" or new_target.name == "RockyPlanet":
+			type_str = "Planet"
+			icon_index = 3
 			
 		target_label.text = new_target.name + " [" + type_str + "]"
+		
+		# Set target icon
+		if target_icon and icons_sheet:
+			var atlas = AtlasTexture.new()
+			atlas.atlas = icons_sheet
+			
+			var col = icon_index % 4
+			var row = icon_index / 4
+			atlas.region = Rect2(col * 384, row * 512, 384, 512)
+			target_icon.texture = atlas
+			target_icon.visible = true
 	else:
 		target_panel.visible = false
 		target_label.text = "No Target Selected"
+		if target_icon:
+			target_icon.visible = false
 		
 	if overview_collapsed:
 		refresh_overview()
+
+func _on_target_icon_gui_input(event: InputEvent):
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
+		accept_event()
+		var t = GlobalState.active_target
+		if t and is_instance_valid(t):
+			show_context_menu(t)
 
 func _on_credits_changed(new_credits: int):
 	if credits_label:
@@ -874,6 +921,12 @@ func toggle_dock_menu(station: Node3D):
 		upgrade_cargo_btn.text = "Upgrade Cargo Hold (+25 m³) - 100 SC"
 		upgrade_laser_btn.text = "Upgrade Mining Laser (+1 yield) - 150 SC"
 		_update_repair_button()
+		if GlobalState.player:
+			GlobalState.player.is_docked = true
+			GlobalState.player.velocity = Vector3.ZERO
+	else:
+		if GlobalState.player:
+			GlobalState.player.is_docked = false
 
 func undock_player():
 	dock_panel.visible = false
@@ -881,6 +934,8 @@ func undock_player():
 	# Give player a slight push away from station
 	if GlobalState.player:
 		GlobalState.player.global_position += Vector3(0, 0, -15.0)
+		GlobalState.player.is_docked = false
+		GlobalState.player.nav_mode = "MANUAL"
 
 func _sell_ore():
 	if GlobalState.cargo > 0.0:
@@ -888,6 +943,7 @@ func _sell_ore():
 		GlobalState.player_credits += earnings
 		GlobalState.cargo = 0.0
 		_update_repair_button()
+		AudioManager.play_sell_ore()
 
 func _upgrade_cargo():
 	if GlobalState.player_credits >= 100:
@@ -1067,6 +1123,8 @@ func _on_selection_marker_draw():
 		radius_3d = 22.0 * target.scale.x
 	elif target.is_in_group("ship"):
 		radius_3d = 4.0
+	elif target.is_in_group("wreckage"):
+		radius_3d = 4.0 * target.scale.x
 		
 	var screen_center = Vector2.ZERO
 	var edge_pos_3d = target.global_position + cam.global_transform.basis.x * radius_3d
@@ -1162,6 +1220,11 @@ func refresh_overview():
 		if node != GlobalState.player and is_instance_valid(node) and not node.get("destroyed"):
 			entities.append(node)
 			
+	# Add Wreckage
+	for node in get_tree().get_nodes_in_group("wreckage"):
+		if is_instance_valid(node):
+			entities.append(node)
+			
 	update_overview_list(entities)
 
 func show_hud_warning(text: String):
@@ -1235,10 +1298,12 @@ func _repair_ship():
 	var cost_per_hp = 2.0
 	var total_cost = int(missing_hp * cost_per_hp)
 	
+	var repaired = false
 	if GlobalState.player_credits >= total_cost:
 		# Full repair
 		GlobalState.player_credits -= total_cost
 		p.set("health", max_hp)
+		repaired = true
 	else:
 		# Partial repair
 		var affordable_hp = int(GlobalState.player_credits / cost_per_hp)
@@ -1246,6 +1311,10 @@ func _repair_ship():
 			var cost_paid = int(affordable_hp * cost_per_hp)
 			GlobalState.player_credits -= cost_paid
 			p.set("health", hp + affordable_hp)
+			repaired = true
+			
+	if repaired:
+		AudioManager.play_repair()
 			
 	# Update HUD and button state
 	_update_hud_health()

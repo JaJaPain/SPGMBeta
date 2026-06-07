@@ -12,6 +12,8 @@ var sfx_laser2 = preload("res://sound/WeaponFire/Laser Weapon Firing2.mp3")
 var sfx_explosion1 = preload("res://sound/SpaceShipExplosion/Spaceship Explosion1.mp3")
 var sfx_explosion2 = preload("res://sound/SpaceShipExplosion/Spaceship Explosion2.mp3")
 var sfx_cargo_full = preload("res://assets/Cargo Full.mp3")
+var sfx_repair: AudioStream = null
+var sfx_sell_ore: AudioStream = null
 var sfx_align: AudioStream = null
 
 var tracks: Array = []
@@ -48,6 +50,9 @@ func _ready():
 		add_child(p)
 		sfx_players.append(p)
 		
+	# Set default music volume to 50%
+	set_music_volume(0.5)
+	
 	# Start playing music
 	play_next_bgm()
 
@@ -74,14 +79,37 @@ func play_sfx(stream: AudioStream, volume_db: float = 0.0):
 	p.volume_db = volume_db
 	p.play()
 
-func play_laser():
-	# Alternate randomly between the two laser sounds
-	var laser = sfx_laser1 if randf() > 0.5 else sfx_laser2
-	play_sfx(laser, -6.0)
+func play_sfx_3d(stream: AudioStream, position: Vector3, volume_db: float = 0.0):
+	var p = AudioStreamPlayer3D.new()
+	p.stream = stream
+	p.volume_db = volume_db
+	p.bus = "SFX"
+	
+	# Configure 3D attenuation settings
+	p.unit_size = 15.0 # Distance where the sound begins to fade
+	p.max_db = 3.0
+	p.max_distance = 350.0 # Beyond this, completely silent
+	
+	var main = get_tree().current_scene
+	if main:
+		main.add_child(p)
+		p.global_position = position
+		p.play()
+		p.finished.connect(p.queue_free)
 
-func play_explosion():
+func play_laser(pos: Variant = null):
+	var laser = sfx_laser1 if randf() > 0.5 else sfx_laser2
+	if pos is Vector3:
+		play_sfx_3d(laser, pos, -6.0)
+	else:
+		play_sfx(laser, -6.0)
+
+func play_explosion(pos: Variant = null):
 	var expl = sfx_explosion1 if randf() > 0.5 else sfx_explosion2
-	play_sfx(expl, -3.0)
+	if pos is Vector3:
+		play_sfx_3d(expl, pos, -3.0)
+	else:
+		play_sfx(expl, -3.0)
 
 func play_cargo_full():
 	play_sfx(sfx_cargo_full, 0.0)
@@ -119,3 +147,15 @@ func play_align():
 		sfx_align = load("res://sound/ShipSounds/ShipAlignSound.mp3")
 	if sfx_align:
 		play_sfx(sfx_align, -4.0)
+
+func play_repair():
+	if sfx_repair == null:
+		sfx_repair = load("res://sound/spaceStationSoundFX/RepairShip.wav")
+	if sfx_repair:
+		play_sfx(sfx_repair, 0.0)
+
+func play_sell_ore():
+	if sfx_sell_ore == null:
+		sfx_sell_ore = load("res://sound/spaceStationSoundFX/sellOre.mp3")
+	if sfx_sell_ore:
+		play_sfx(sfx_sell_ore, -2.0)

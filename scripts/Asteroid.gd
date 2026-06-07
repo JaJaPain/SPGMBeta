@@ -52,7 +52,7 @@ func mine():
 
 func deplete():
 	destroyed = true
-	AudioManager.play_explosion()
+	AudioManager.play_explosion(global_position)
 	# Remove from entities list if it was targeted
 	if GlobalState.active_target == self:
 		GlobalState.active_target = null

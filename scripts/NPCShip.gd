@@ -17,6 +17,13 @@ var hardpoints: Array[Node3D] = []
 var current_hp_index: int = 0
 var hull_instance: Node3D = null
 
+# Archetype attributes
+var archetype: String = "Balanced"
+var fire_cooldown_min: float = 1.3
+var fire_cooldown_max: float = 1.5
+var damage_min: float = 5.5
+var damage_max: float = 6.5
+
 @onready var visual: Node3D = $Visual
 
 # Preloads
@@ -24,12 +31,73 @@ var mesh_zenith = preload("res://assets/faction2.glb")
 var mesh_aurelia = preload("res://assets/F1HP.glb")
 var mesh_vanguard = preload("res://assets/faction2.glb")
 
-func _ready():
+func _generate_archetype():
+	var roll = randf()
+	var visual_scale_mult: float = 1.0
+	
+	if roll < 0.25:
+		# Balanced (Patrol)
+		archetype = "Patrol"
+		max_health = randf_range(45.0, 55.0)
+		speed = randf_range(9.0, 11.0)
+		rotation_speed = 2.2
+		fire_cooldown_min = 1.3
+		fire_cooldown_max = 1.5
+		damage_min = 5.5
+		damage_max = 6.5
+		visual_scale_mult = 1.0
+	elif roll < 0.50:
+		# Heavy Tank (Sentinel)
+		archetype = "Sentinel"
+		max_health = randf_range(85.0, 95.0)
+		speed = randf_range(6.5, 7.5)
+		rotation_speed = 1.6
+		fire_cooldown_min = 1.6
+		fire_cooldown_max = 2.0
+		damage_min = 3.5
+		damage_max = 4.5
+		visual_scale_mult = 1.3
+	elif roll < 0.75:
+		# Glass Cannon (Raider)
+		archetype = "Raider"
+		max_health = randf_range(20.0, 25.0)
+		speed = randf_range(9.5, 10.5)
+		rotation_speed = 2.4
+		fire_cooldown_min = 1.0
+		fire_cooldown_max = 1.2
+		damage_min = 11.0
+		damage_max = 13.0
+		visual_scale_mult = 0.9
+	else:
+		# Swift Interceptor (Interceptor)
+		archetype = "Interceptor"
+		max_health = randf_range(30.0, 40.0)
+		speed = randf_range(15.0, 17.0)
+		rotation_speed = 3.0
+		fire_cooldown_min = 0.7
+		fire_cooldown_max = 0.9
+		damage_min = 3.0
+		damage_max = 4.0
+		visual_scale_mult = 0.8
+		
+	# Apply Elite Reinforcement Multiplier if applicable
 	if is_reinforcement:
-		max_health = 100.0
-		scale = Vector3(1.5, 1.5, 1.5)
+		max_health = max_health * 2.0
+		damage_min = damage_min * 1.5
+		damage_max = damage_max * 1.5
+		visual_scale_mult = visual_scale_mult * 1.5
+		archetype = "Elite " + archetype
 		
 	health = max_health
+	
+	# Apply visual/collision scaling
+	scale = Vector3(visual_scale_mult, visual_scale_mult, visual_scale_mult)
+	
+	# Override name to display archetype in UI
+	name = faction.to_upper() + " " + archetype + " " + str(randi() % 1000)
+
+func _ready():
+	_generate_archetype()
 	patrol_center = global_position
 	
 	# Add to entities list
@@ -98,13 +166,13 @@ func _physics_process(delta: float):
 			target = null
 		
 	# Scanning and targeting
-	if target == null or not is_instance_valid(target) or target.get("destroyed"):
+	if target == null or not is_instance_valid(target) or target.get("destroyed") or (target == GlobalState.player and GlobalState.player.get("is_docked")):
 		target = null
 		
 		# Elite reinforcements target the player immediately
 		if is_reinforcement:
 			var p = GlobalState.player
-			if p and is_instance_valid(p) and not p.get("destroyed"):
+			if p and is_instance_valid(p) and not p.get("destroyed") and not p.get("is_docked"):
 				target = p
 				
 		if target == null:
@@ -114,7 +182,7 @@ func _physics_process(delta: float):
 			
 			# 1. Check if player is an enemy and in range
 			var p = GlobalState.player
-			if p and is_instance_valid(p) and not p.get("destroyed"):
+			if p and is_instance_valid(p) and not p.get("destroyed") and not p.get("is_docked"):
 				var is_player_enemy = false
 				if GlobalState.reputations.has(faction) and GlobalState.reputations[faction] < -10.0:
 					is_player_enemy = true
@@ -166,8 +234,9 @@ func _physics_process(delta: float):
 			# Orbit around patrol center
 			rotation.y += 0.2 * delta
 		
-		# Move forward slowly
-		velocity = -global_transform.basis.z * (speed * 0.5)
+		# Move forward at full speed if far from patrol center, otherwise slowly
+		var speed_factor = 1.0 if dist_to_center > 150.0 else 0.5
+		velocity = -global_transform.basis.z * (speed * speed_factor)
 		move_and_slide()
 
 func steer_towards(target_pos: Vector3, delta: float):
@@ -185,8 +254,8 @@ func steer_towards(target_pos: Vector3, delta: float):
 			rotation.x += diff_x * delta * rotation_speed
 
 func fire():
-	fire_cooldown = 1.4
-	AudioManager.play_laser()
+	fire_cooldown = randf_range(fire_cooldown_min, fire_cooldown_max)
+	AudioManager.play_laser(global_position)
 	
 	# Determine laser start position
 	var spawn_pos = global_position + (-global_transform.basis.z * 1.8)
@@ -201,7 +270,7 @@ func fire():
 	if proj_scene:
 		var p = proj_scene.instantiate()
 		p.direction = -global_transform.basis.z
-		p.damage = 12.0 if is_reinforcement else 6.0
+		p.damage = randf_range(damage_min, damage_max)
 		p.faction = faction
 		
 		# Projectile color
@@ -234,7 +303,21 @@ func take_damage(amount: float, attacker_faction: String = ""):
 
 func die():
 	destroyed = true
-	AudioManager.play_explosion()
+	AudioManager.play_explosion(global_position)
+	
+	# Spawn wreckage
+	var wreck_script = load("res://scripts/Wreckage.gd")
+	if wreck_script:
+		var wreck = StaticBody3D.new()
+		wreck.set_script(wreck_script)
+		wreck.name = name + "_Wreck"
+		get_parent().add_child(wreck)
+		wreck.global_position = global_position
+		wreck.global_rotation = global_rotation
+		wreck.add_to_group("wreckage")
+		wreck.call("initialize", visual)
+		
+	GlobalState.destroyed_ships_pool += 1
 	
 	# Award credits and apply reputation changes if killed by player
 	if last_attacker_faction == "player":

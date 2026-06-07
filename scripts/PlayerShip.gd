@@ -5,6 +5,7 @@ extends CharacterBody3D
 var health: float = 100.0
 var faction: String = "player"
 var destroyed: bool = false
+var is_docked: bool = false
 @export var rotation_speed: float = 3.5
 
 # Navigation variables
@@ -458,7 +459,7 @@ func perform_action(target_node: Node3D, delta: float):
 		
 		if fire_cooldown <= 0.0:
 			fire_cooldown = 0.5
-			AudioManager.play_laser()
+			AudioManager.play_laser(global_position)
 			if target_node.has_method("mine"):
 				target_node.mine()
 	
@@ -466,7 +467,7 @@ func perform_action(target_node: Node3D, delta: float):
 		mining_laser.visible = false
 		if fire_cooldown <= 0.0:
 			fire_cooldown = 0.75 # Balanced fire rate for mining ship
-			AudioManager.play_laser()
+			AudioManager.play_laser(global_position)
 			spawn_projectile(target_node)
 	else:
 		mining_laser.visible = false
@@ -493,7 +494,7 @@ func double_click_move(click_pos: Vector3):
 
 func die():
 	destroyed = true
-	AudioManager.play_explosion()
+	AudioManager.play_explosion(global_position)
 	var ui = get_node_or_null("../CanvasLayer/UIManager")
 	if ui and ui.has_method("show_death_screen"):
 		ui.show_death_screen()
@@ -563,6 +564,7 @@ func _create_drones():
 	drone_rotations.append(Vector3(randf_range(-0.9, -0.4), randf_range(0.9, 1.6), randf_range(-0.6, -0.1)))
 
 func take_damage(amount: float, attacker_faction: String = ""):
+	if is_docked: return
 	if health <= 0.0: return
 	health -= amount
 	if health <= 0.0:

@@ -21,6 +21,7 @@ var mining_yield: float = 2.0
 var damage: float = 5.0
 var speed_mult: float = 1.0
 var laser_range: float = 80.0
+var destroyed_ships_pool: int = 0
 
 # Game references
 var player: Node3D = null
