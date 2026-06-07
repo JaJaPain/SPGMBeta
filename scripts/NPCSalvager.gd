@@ -80,6 +80,10 @@ func _physics_process(delta: float):
 					target_wreck = wreck
 					target_wreck.set("being_salvaged", true)
 					state = "APPROACHING"
+					
+					# Trigger industrial banter in radio chatter
+					var banter = LLMInterface.get_chatter_line("industrial_banter")
+					GlobalState.emit_chatter(name, banter, Color(0.9, 0.7, 0.1))
 					break
 					
 		"APPROACHING":

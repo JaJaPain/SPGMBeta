@@ -12,6 +12,7 @@ var target: Node3D = null
 var fire_cooldown: float = 0.0
 var destroyed: bool = false
 var last_attacker_faction: String = ""
+var taunted_player: bool = false
 
 var hardpoints: Array[Node3D] = []
 var current_hp_index: int = 0
@@ -267,6 +268,18 @@ func fire():
 	fire_cooldown = randf_range(fire_cooldown_min, fire_cooldown_max)
 	AudioManager.play_laser(global_position)
 	
+	# If targeting the player, trigger hostile taunt
+	if target == GlobalState.player:
+		if not taunted_player:
+			taunted_player = true
+			var taunt = LLMInterface.get_chatter_line("hostile_taunt")
+			var fac_color = Color(1.0, 1.0, 1.0)
+			match faction:
+				"zenith": fac_color = Color(1.0, 0.6, 0.1) # Orange
+				"aurelia": fac_color = Color(0.85, 0.2, 0.2) # Red
+				"vanguard": fac_color = Color(0.2, 0.7, 1.0) # Cyan/Blue
+			GlobalState.emit_chatter(name, taunt, fac_color)
+	
 	# Determine laser start position
 	var spawn_pos = global_position + (-global_transform.basis.z * 1.8)
 	if hardpoints.size() > 0:
@@ -333,6 +346,16 @@ func die():
 	if last_attacker_faction == "player":
 		GlobalState.player_credits += 15
 		_apply_reputation_changes()
+		
+		# Trigger death cry chatter
+		var cry = LLMInterface.get_chatter_line("death_cry")
+		var fac_color = Color(1.0, 1.0, 1.0)
+		match faction:
+			"zenith": fac_color = Color(1.0, 0.6, 0.1)
+			"aurelia": fac_color = Color(0.85, 0.2, 0.2)
+			"vanguard": fac_color = Color(0.2, 0.7, 1.0)
+		GlobalState.emit_chatter(name, cry, fac_color)
+		
 		GlobalState.record_kill(faction)
 	
 	# Remove from entities list

@@ -34,6 +34,21 @@ var agent_back_btn: Button
 var quest_tracker_panel: Panel
 var quest_tracker_title: Label
 var quest_tracker_progress: Label
+var quest_tracker_logo: TextureRect
+
+# Systems Comms Chat Window
+var chat_window_panel: Panel
+var chat_scroll: ScrollContainer
+var chat_vbox: VBoxContainer
+var max_chat_messages: int = 50
+
+# Preloaded assets
+var quest_givers_sheet = preload("res://assets/QuestGivers.png")
+var faction_branding_sheet = preload("res://assets/factionBranding.png")
+
+# Sliced elements inside Agent Panel
+var agent_portrait: TextureRect
+var agent_client_logo: TextureRect
 
 var pause_panel: Panel
 var death_panel: Panel
@@ -195,9 +210,9 @@ func _create_hud():
 	rep_lbl.text = "Rep: ZEN 50 | AUR -20 | VAN -20"
 	vbox.add_child(rep_lbl)
 	
-	# Quest Tracker HUD Panel (positioned at Vector2(20, 190))
+	# Quest Tracker HUD Panel (positioned at Vector2(20, 190) with horizontal layout)
 	quest_tracker_panel = Panel.new()
-	quest_tracker_panel.custom_minimum_size = Vector2(350, 80)
+	quest_tracker_panel.custom_minimum_size = Vector2(360, 80)
 	quest_tracker_panel.position = Vector2(20, 190)
 	add_child(quest_tracker_panel)
 	
@@ -214,28 +229,94 @@ func _create_hud():
 	tracker_style.corner_radius_bottom_left = 4
 	quest_tracker_panel.add_theme_stylebox_override("panel", tracker_style)
 	
+	var tracker_hbox = HBoxContainer.new()
+	tracker_hbox.position = Vector2(8, 8)
+	tracker_hbox.custom_minimum_size = Vector2(344, 64)
+	quest_tracker_panel.add_child(tracker_hbox)
+	
+	# Faction branding logo on the left of tracker
+	quest_tracker_logo = TextureRect.new()
+	quest_tracker_logo.custom_minimum_size = Vector2(48, 48)
+	quest_tracker_logo.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	quest_tracker_logo.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	quest_tracker_logo.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	tracker_hbox.add_child(quest_tracker_logo)
+	
 	var tracker_vbox = VBoxContainer.new()
-	tracker_vbox.position = Vector2(10, 8)
-	tracker_vbox.custom_minimum_size = Vector2(330, 64)
-	quest_tracker_panel.add_child(tracker_vbox)
+	tracker_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	tracker_vbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	tracker_hbox.add_child(tracker_vbox)
 	
 	var tracker_header = Label.new()
 	tracker_header.text = "ACTIVE CONTRACT"
-	tracker_header.add_theme_font_size_override("font_size", 11)
+	tracker_header.add_theme_font_size_override("font_size", 10)
 	tracker_header.add_theme_color_override("font_color", Color(0.0, 0.9, 0.9))
 	tracker_vbox.add_child(tracker_header)
 	
 	quest_tracker_title = Label.new()
 	quest_tracker_title.text = "Contract Title"
-	quest_tracker_title.add_theme_font_size_override("font_size", 14)
+	quest_tracker_title.add_theme_font_size_override("font_size", 13)
 	tracker_vbox.add_child(quest_tracker_title)
 	
 	quest_tracker_progress = Label.new()
 	quest_tracker_progress.text = "Progress: 0 / 0"
-	quest_tracker_progress.add_theme_font_size_override("font_size", 13)
+	quest_tracker_progress.add_theme_font_size_override("font_size", 12)
 	tracker_vbox.add_child(quest_tracker_progress)
 	
 	quest_tracker_panel.visible = false
+
+	# Systems Comms Chat Window (positioned at the bottom-left corner using anchors for responsiveness)
+	chat_window_panel = Panel.new()
+	chat_window_panel.custom_minimum_size = Vector2(400, 200)
+	chat_window_panel.anchor_top = 1.0
+	chat_window_panel.anchor_bottom = 1.0
+	chat_window_panel.offset_left = 20
+	chat_window_panel.offset_top = -220
+	chat_window_panel.offset_right = 420
+	chat_window_panel.offset_bottom = -20
+	add_child(chat_window_panel)
+	
+	var chat_style = StyleBoxFlat.new()
+	chat_style.bg_color = Color(0.08, 0.08, 0.1, 0.6) # Translucent dark background
+	chat_style.border_width_left = 1
+	chat_style.border_width_top = 1
+	chat_style.border_width_right = 1
+	chat_style.border_width_bottom = 1
+	chat_style.border_color = Color(0.0, 0.85, 1.0, 0.35) # Glowing cyan border
+	chat_style.corner_radius_top_left = 6
+	chat_style.corner_radius_top_right = 6
+	chat_style.corner_radius_bottom_right = 6
+	chat_style.corner_radius_bottom_left = 6
+	chat_window_panel.add_theme_stylebox_override("panel", chat_style)
+	
+	var chat_layout = VBoxContainer.new()
+	chat_layout.set_anchors_preset(Control.PRESET_FULL_RECT)
+	chat_layout.offset_left = 10
+	chat_layout.offset_right = -10
+	chat_layout.offset_top = 8
+	chat_layout.offset_bottom = -8
+	chat_window_panel.add_child(chat_layout)
+	
+	var chat_header = Label.new()
+	chat_header.text = "SYSTEM COMMS RADIO"
+	chat_header.add_theme_font_size_override("font_size", 10)
+	chat_header.add_theme_color_override("font_color", Color(0.0, 0.85, 1.0, 0.8))
+	chat_layout.add_child(chat_header)
+	
+	chat_scroll = ScrollContainer.new()
+	chat_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	chat_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	chat_layout.add_child(chat_scroll)
+	
+	chat_vbox = VBoxContainer.new()
+	chat_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	chat_scroll.add_child(chat_vbox)
+	
+	# Connect signal to print system chatter
+	GlobalState.system_chatter_received.connect(add_chat_message)
+	
+	# Initial welcome message
+	add_chat_message("SYSTEM", "Radio channels open. Encryption secure.", Color(0.0, 0.9, 0.9))
 
 func _create_target_panel():
 	target_panel = PanelContainer.new()
@@ -473,8 +554,8 @@ func _create_dock_menu():
 	# Construct Agent Panel
 	agent_panel = Panel.new()
 	add_child(agent_panel)
-	agent_panel.anchor_left = 0.3
-	agent_panel.anchor_right = 0.7
+	agent_panel.anchor_left = 0.25
+	agent_panel.anchor_right = 0.75
 	agent_panel.anchor_top = 0.2
 	agent_panel.anchor_bottom = 0.8
 	agent_panel.offset_left = 0
@@ -496,25 +577,57 @@ func _create_dock_menu():
 	agent_style.corner_radius_bottom_left = 4
 	agent_panel.add_theme_stylebox_override("panel", agent_style)
 	
+	var agent_hbox = HBoxContainer.new()
+	agent_hbox.set_anchors_preset(Control.PRESET_FULL_RECT)
+	agent_hbox.offset_left = 15
+	agent_hbox.offset_right = -15
+	agent_hbox.offset_top = 15
+	agent_hbox.offset_bottom = -15
+	agent_panel.add_child(agent_hbox)
+	
+	# Left Side: Portraits and Client Branding
+	var portrait_vbox = VBoxContainer.new()
+	portrait_vbox.custom_minimum_size = Vector2(180, 0)
+	portrait_vbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	agent_hbox.add_child(portrait_vbox)
+	
+	agent_portrait = TextureRect.new()
+	agent_portrait.custom_minimum_size = Vector2(180, 180)
+	agent_portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	agent_portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	portrait_vbox.add_child(agent_portrait)
+	
+	var logo_spacer = Control.new()
+	logo_spacer.custom_minimum_size = Vector2(0, 15)
+	portrait_vbox.add_child(logo_spacer)
+	
+	agent_client_logo = TextureRect.new()
+	agent_client_logo.custom_minimum_size = Vector2(100, 100)
+	agent_client_logo.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	agent_client_logo.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	agent_client_logo.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	portrait_vbox.add_child(agent_client_logo)
+	
+	var col_spacer = Control.new()
+	col_spacer.custom_minimum_size = Vector2(20, 0)
+	agent_hbox.add_child(col_spacer)
+	
+	# Right Side: Text details and choice menus
 	var avbox = VBoxContainer.new()
-	avbox.set_anchors_preset(Control.PRESET_FULL_RECT)
-	avbox.offset_left = 15
-	avbox.offset_right = -15
-	avbox.offset_top = 15
-	avbox.offset_bottom = -15
+	avbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	avbox.alignment = BoxContainer.ALIGNMENT_CENTER
-	agent_panel.add_child(avbox)
+	agent_hbox.add_child(avbox)
 	
 	agent_name_label = Label.new()
 	agent_name_label.text = "BROKER KAELEN"
-	agent_name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	agent_name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	agent_name_label.add_theme_color_override("font_color", Color(0.0, 0.9, 0.9))
 	agent_name_label.add_theme_font_size_override("font_size", 18)
 	avbox.add_child(agent_name_label)
 	
 	var agent_subtitle = Label.new()
 	agent_subtitle.text = "Neutral Fixer & Profit Broker"
-	agent_subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	agent_subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	agent_subtitle.add_theme_font_size_override("font_size", 11)
 	agent_subtitle.modulate = Color(0.7, 0.7, 0.7)
 	avbox.add_child(agent_subtitle)
@@ -1074,6 +1187,10 @@ func undock_player():
 	dock_panel.visible = false
 	agent_panel.visible = false
 	current_station = null
+	
+	# Stop voice dialogue audio if playing
+	TTSInterface.play_dialogue_audio("")
+	
 	# Give player a slight push away from station
 	if GlobalState.player:
 		GlobalState.player.global_position += Vector3(0, 0, -15.0)
@@ -1490,6 +1607,9 @@ func _on_talk_to_agent_pressed():
 		var q = QuestManager.active_quest
 		agent_name_label.text = q["agent_name"].to_upper()
 		
+		# Update portrait and client logo
+		_update_agent_portrait(q.get("faction", "neutral"))
+		
 		var type_str = "Clear Hostiles" if q["objective_type"] == "KILL_SHIPS" else "Deliver Resources"
 		agent_dialogue_label.text = "Active Contract: " + q["title"] + " (" + type_str + ")\n\n" + \
 			"Briefing: " + q["dialogue"] + "\n\n" + \
@@ -1517,6 +1637,7 @@ func _refresh_agent_quest_board():
 	agent_name_label.text = "BROKER KAELEN"
 	agent_dialogue_label.text = "Broker Kaelen is checking client contract requests..."
 	agent_back_btn.visible = false
+	_update_agent_portrait("neutral")
 	
 	# Request new quest from local LLM / Fallback
 	QuestManager.request_new_quest("neutral", _on_quest_generated_received)
@@ -1534,6 +1655,12 @@ func _on_quest_generated_received(quest_data: Dictionary, is_fallback: bool):
 	var note = " [Offline Backup]" if is_fallback else ""
 	agent_dialogue_label.text = quest_data.get("dialogue", "") + note
 	agent_name_label.text = quest_data.get("agent_name", "Broker Kaelen").to_upper()
+	
+	# Update portrait and logo
+	_update_agent_portrait(quest_data.get("faction", "neutral"))
+	
+	# Play briefing voice audio
+	TTSInterface.play_dialogue_audio(quest_data.get("dialogue", ""))
 	
 	# Append client faction details
 	var f_client = quest_data.get("faction", "neutral").to_upper()
@@ -1568,6 +1695,10 @@ func _on_choice_selected(quest_data: Dictionary, choice: Dictionary):
 	
 	var consequence = choice.get("consequence", {})
 	agent_dialogue_label.text = consequence.get("dialogue_response", "Contract confirmed. Get it done.")
+	
+	# Play choice response voice audio
+	TTSInterface.play_dialogue_audio(consequence.get("dialogue_response", "Contract confirmed. Get it done."))
+	
 	agent_back_btn.visible = false
 	
 	# Create undock confirmation button
@@ -1577,6 +1708,8 @@ func _on_choice_selected(quest_data: Dictionary, choice: Dictionary):
 	agent_choices_container.add_child(launch_btn)
 
 func _on_agent_back_pressed():
+	# Stop voice dialogue audio
+	TTSInterface.play_dialogue_audio("")
 	agent_panel.visible = false
 	dock_panel.visible = true
 
@@ -1587,6 +1720,7 @@ func _on_agent_complete_pressed():
 	QuestManager.complete_quest()
 	
 	agent_dialogue_label.text = "Pleasure doing business with you, pilot. Payout transferred and brokerage fee deducted. Check back soon."
+	TTSInterface.play_dialogue_audio(agent_dialogue_label.text)
 	agent_back_btn.visible = true
 
 func _on_agent_abandon_pressed():
@@ -1596,6 +1730,7 @@ func _on_agent_abandon_pressed():
 	QuestManager.abandon_quest()
 	
 	agent_dialogue_label.text = "Contract dumped? You're costing me credit margins. I don't forget when people waste my time."
+	TTSInterface.play_dialogue_audio(agent_dialogue_label.text)
 	agent_back_btn.visible = true
 
 func _on_quest_accepted():
@@ -1620,9 +1755,96 @@ func _update_quest_tracker():
 	var q = QuestManager.active_quest
 	quest_tracker_title.text = q["title"]
 	
+	# Update tracker client faction logo
+	_update_quest_tracker_logo(q.get("faction", "neutral"))
+	
 	if q["objective_type"] == "KILL_SHIPS":
 		quest_tracker_progress.text = "Kills: " + str(q["current_count"]) + " / " + str(q["count_required"]) + " (" + q["target_faction"].to_upper() + ")"
 	elif q["objective_type"] == "DELIVER_ORE":
 		quest_tracker_progress.text = "Ore: " + str(int(GlobalState.cargo)) + " / " + str(int(q["amount_required"])) + " m³"
 		if GlobalState.cargo >= q["amount_required"]:
 			quest_tracker_progress.text += " (Ready)"
+
+func _update_quest_tracker_logo(faction: String):
+	if quest_tracker_logo and faction_branding_sheet:
+		var atlas = AtlasTexture.new()
+		atlas.atlas = faction_branding_sheet
+		
+		var col = 0
+		var show_logo = true
+		match faction.to_lower():
+			"zenith": col = 0
+			"aurelia": col = 1
+			"vanguard": col = 2
+			_: show_logo = false
+			
+		if show_logo:
+			atlas.region = Rect2(col * 512, 0, 512, 512)
+			quest_tracker_logo.texture = atlas
+			quest_tracker_logo.visible = true
+		else:
+			quest_tracker_logo.visible = false
+
+func _update_agent_portrait(faction: String):
+	if agent_portrait and quest_givers_sheet:
+		var atlas = AtlasTexture.new()
+		atlas.atlas = quest_givers_sheet
+		
+		# Choose portrait index based on faction:
+		# Zenith (0), Aurelia (1), Vanguard (2), Neutral (3)
+		var index = 3
+		match faction.to_lower():
+			"zenith": index = 0
+			"aurelia": index = 1
+			"vanguard": index = 2
+			"neutral": index = 3
+			
+		var col = index % 2
+		var row = index / 2
+		atlas.region = Rect2(col * 627, row * 627, 627, 627)
+		agent_portrait.texture = atlas
+		agent_portrait.visible = true
+		
+	if agent_client_logo and faction_branding_sheet:
+		var atlas = AtlasTexture.new()
+		atlas.atlas = faction_branding_sheet
+		
+		var col = 0
+		var show_logo = true
+		match faction.to_lower():
+			"zenith": col = 0
+			"aurelia": col = 1
+			"vanguard": col = 2
+			_: show_logo = false
+			
+		if show_logo:
+			atlas.region = Rect2(col * 512, 0, 512, 512)
+			agent_client_logo.texture = atlas
+			agent_client_logo.visible = true
+		else:
+			agent_client_logo.visible = false
+
+func add_chat_message(sender: String, message: String, sender_color: Color):
+	if not chat_vbox:
+		return
+		
+	var msg_label = RichTextLabel.new()
+	msg_label.bbcode_enabled = true
+	msg_label.fit_content = true
+	msg_label.autowrap_mode = TextServer.AUTOWRAP_WORD
+	msg_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	msg_label.add_theme_font_size_override("normal_font_size", 12)
+	
+	var color_hex = sender_color.to_html(false)
+	msg_label.text = "[color=#%s][b]%s:[/b][/color] %s" % [color_hex, sender, message]
+	
+	chat_vbox.add_child(msg_label)
+	
+	while chat_vbox.get_child_count() > max_chat_messages:
+		var first = chat_vbox.get_child(0)
+		first.queue_free()
+		chat_vbox.remove_child(first)
+		
+	await get_tree().process_frame
+	if chat_scroll:
+		chat_scroll.scroll_vertical = int(chat_vbox.size.y)

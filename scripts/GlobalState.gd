@@ -45,6 +45,7 @@ var reputations: Dictionary = {
 signal reputation_changed(faction_name: String, new_rep: float)
 signal ship_destroyed(faction_name: String)
 signal entities_changed()
+signal system_chatter_received(sender: String, message: String, color: Color)
 
 var faction_kills: Dictionary = {
 	"zenith": 0,
@@ -89,6 +90,13 @@ func spawn_reinforcement(faction_name: String):
 			var ui = current_scene.get_node_or_null("CanvasLayer/UIManager")
 			if ui and ui.has_method("show_hud_warning"):
 				ui.show_hud_warning("WARNING: " + faction_name.to_upper() + " Elite Reinforcement has entered the area!")
+			
+			# Trigger system alert in chatter
+			var alert = LLMInterface.get_chatter_line("system_alert")
+			emit_chatter("SYSTEM", alert, Color(0.0, 0.9, 0.9))
+
+func emit_chatter(sender: String, message: String, color: Color):
+	system_chatter_received.emit(sender, message, color)
 
 func adjust_reputation(faction_name: String, amount: float):
 	if reputations.has(faction_name):

@@ -194,6 +194,48 @@ var complications = [
 	"A logistics emergency has pushed resource demands to critical levels."
 ]
 
+# Radio chatter pre-fetch cache
+var chatter_cache = {
+	"hostile_taunt": [],
+	"death_cry": [],
+	"system_alert": [],
+	"industrial_banter": []
+}
+
+var generic_banter = {
+	"hostile_taunt": [
+		"Your shields won't save you, pilot!",
+		"Hand over your cargo or prepare to be space dust!",
+		"You picked the wrong sector to fly through!",
+		"Threat locked. Engaging targets."
+	],
+	"death_cry": [
+		"Engine core breaching! AAAARGH!",
+		"Mayday, mayday! Ejection systems offline...",
+		"Tell my crew... I almost made it...",
+		"No! The reactor... it's going critical!"
+	],
+	"system_alert": [
+		"SYSTEM ALERT: High-energy signatures detected nearby.",
+		"SYSTEM ALERT: Localized gravity snare activated. Danger high.",
+		"SYSTEM ALERT: Faction reinforcements are entering the grid.",
+		"SYSTEM ALERT: Combat warning. Hostile interceptors incoming."
+	],
+	"industrial_banter": [
+		"Scanning scrap pile. Looks like high-yield debris.",
+		"Commencing salvage sweep. Keep those lasers focused.",
+		"Another ship's misfortune is our bonus margin.",
+		"Secure the perimeter, let's scrape this hull clean."
+	]
+}
+
+var active_fetches = {
+	"hostile_taunt": false,
+	"death_cry": false,
+	"system_alert": false,
+	"industrial_banter": false
+}
+
 func _ready():
 	http_request = HTTPRequest.new()
 	add_child(http_request)
@@ -355,3 +397,108 @@ func _trigger_fallback():
 	
 	if active_callback.is_valid():
 		active_callback.call(selected_quest, true)
+
+func get_chatter_line(type: String) -> String:
+	if not chatter_cache.has(type):
+		return "Static on comms..."
+		
+	var line = ""
+	if chatter_cache[type].size() > 0:
+		line = chatter_cache[type].pop_front()
+	else:
+		var templates = generic_banter.get(type, ["Static on comms..."])
+		line = templates[randi() % templates.size()]
+		
+	# Trigger background pre-fetch if cache is running low and not currently fetching
+	if chatter_cache[type].size() < 2 and not active_fetches[type]:
+		fetch_chatter_background(type)
+		
+	return line
+
+func fetch_chatter_background(type: String):
+	active_fetches[type] = true
+	
+	# Describe the generation task to Ollama based on type
+	var description = ""
+	match type:
+		"hostile_taunt":
+			description = "3 unique, short (under 12 words) hostile radio taunts spoken by an enemy NPC pilot attacking the player. Use space theme terminology. Be aggressive or mocking."
+		"death_cry":
+			description = "3 unique, short (under 12 words) dramatic radio death cries spoken by an NPC pilot as their ship is exploding. Include static or garbled transmission markers like '[static]' or '...'."
+		"system_alert":
+			description = "3 unique, short (under 12 words) computerized system announcements or sector warnings. Keep it cold, robotic, and technical."
+		"industrial_banter":
+			description = "3 unique, short (under 12 words) radio chatter lines spoken by a salvager ship crew approaching debris or wreckage. Focus on profit, salvage, scrap, or hauling."
+			
+	var system_prompt = "You are writing radio chatter dialogue lines for a space simulation game. " + \
+		"Generate " + description + " " + \
+		"You MUST respond strictly in valid JSON format matching this schema exactly. Do not output any notes, markdown codeblock formatting, or surrounding text. Only output the raw JSON object:\n" + \
+		"{\n" + \
+		"  \"dialogues\": [\n" + \
+		"    \"[Line 1]\",\n" + \
+		"    \"[Line 2]\",\n" + \
+		"    \"[Line 3]\"\n" + \
+		"  ]\n" + \
+		"}"
+		
+	var payload = {
+		"model": MODEL_NAME,
+		"prompt": system_prompt,
+		"stream": false,
+		"format": "json"
+	}
+	
+	var temp_http = HTTPRequest.new()
+	add_child(temp_http)
+	temp_http.timeout = 5.0 # Give background request plenty of time
+	
+	temp_http.request_completed.connect(func(result, response_code, headers, body):
+		active_fetches[type] = false
+		temp_http.queue_free()
+		
+		if result != HTTPRequest.RESULT_SUCCESS or response_code != 200:
+			print("[LLMInterface] Background chatter fetch failed for type: ", type, " (unreachable or offline)")
+			return
+			
+		var response_text = body.get_string_from_utf8()
+		var json = JSON.new()
+		var err = json.parse(response_text)
+		if err != OK:
+			return
+			
+		var outer_data = json.get_data()
+		if not outer_data is Dictionary or not outer_data.has("response"):
+			return
+			
+		var inner_json_str = outer_data["response"].strip_edges()
+		
+		# Strip markdown codeblocks
+		if inner_json_str.begins_with("```"):
+			var end_idx = inner_json_str.find("\n", 3)
+			if end_idx != -1:
+				inner_json_str = inner_json_str.substr(end_idx + 1)
+			if inner_json_str.ends_with("```"):
+				inner_json_str = inner_json_str.substr(0, inner_json_str.length() - 3)
+			inner_json_str = inner_json_str.strip_edges()
+			
+		var inner_json = JSON.new()
+		var inner_err = inner_json.parse(inner_json_str)
+		if inner_err != OK:
+			return
+			
+		var chatter_data = inner_json.get_data()
+		if chatter_data is Dictionary and chatter_data.has("dialogues"):
+			var dialogues = chatter_data["dialogues"]
+			if dialogues is Array:
+				for line in dialogues:
+					if line is String and line != "":
+						chatter_cache[type].append(line.strip_edges())
+				print("[LLMInterface] Successfully cached ", dialogues.size(), " lines for background chatter type: ", type)
+	)
+	
+	var json_str = JSON.stringify(payload)
+	var headers = ["Content-Type: application/json"]
+	var err = temp_http.request(OLLAMA_URL, headers, HTTPClient.METHOD_POST, json_str)
+	if err != OK:
+		active_fetches[type] = false
+		temp_http.queue_free()
