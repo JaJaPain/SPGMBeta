@@ -88,6 +88,16 @@ func _generate_archetype():
 		visual_scale_mult = visual_scale_mult * 1.5
 		archetype = "Elite " + archetype
 		
+	# Apply Quest Combat Multiplier if target of active combat quest
+	if QuestManager.is_quest_active() and QuestManager.active_quest["objective_type"] == "KILL_SHIPS" and QuestManager.active_quest["target_faction"] == faction:
+		var q_mult = QuestManager.active_quest["combat_multiplier"]
+		if q_mult > 1.0:
+			max_health *= q_mult
+			damage_min *= q_mult
+			damage_max *= q_mult
+			visual_scale_mult *= (1.0 + (q_mult - 1.0) * 0.4)
+			archetype = "Target " + archetype
+			
 	health = max_health
 	
 	# Apply visual/collision scaling

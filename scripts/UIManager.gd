@@ -23,6 +23,17 @@ var sell_btn: Button
 var upgrade_cargo_btn: Button
 var upgrade_laser_btn: Button
 var repair_btn: Button
+var agent_service_btn: Button
+
+var agent_panel: Panel
+var agent_name_label: Label
+var agent_dialogue_label: Label
+var agent_choices_container: VBoxContainer
+var agent_back_btn: Button
+
+var quest_tracker_panel: Panel
+var quest_tracker_title: Label
+var quest_tracker_progress: Label
 
 var pause_panel: Panel
 var death_panel: Panel
@@ -78,6 +89,12 @@ func _ready():
 	GlobalState.target_changed.connect(_on_target_changed)
 	GlobalState.game_paused.connect(_on_pause_changed)
 	GlobalState.entities_changed.connect(refresh_overview)
+	
+	# Connect QuestManager signals
+	QuestManager.quest_accepted.connect(_on_quest_accepted)
+	QuestManager.quest_progress_updated.connect(_on_quest_progress_updated)
+	QuestManager.quest_completed.connect(_on_quest_completed)
+	QuestManager.quest_abandoned.connect(_on_quest_abandoned)
 	
 	_create_hud()
 	_create_target_panel()
@@ -177,6 +194,48 @@ func _create_hud():
 	rep_lbl.name = "RepLabel"
 	rep_lbl.text = "Rep: ZEN 50 | AUR -20 | VAN -20"
 	vbox.add_child(rep_lbl)
+	
+	# Quest Tracker HUD Panel (positioned at Vector2(20, 190))
+	quest_tracker_panel = Panel.new()
+	quest_tracker_panel.custom_minimum_size = Vector2(350, 80)
+	quest_tracker_panel.position = Vector2(20, 190)
+	add_child(quest_tracker_panel)
+	
+	var tracker_style = StyleBoxFlat.new()
+	tracker_style.bg_color = Color(0.1, 0.1, 0.12, 0.6)
+	tracker_style.border_width_left = 1
+	tracker_style.border_width_top = 1
+	tracker_style.border_width_right = 1
+	tracker_style.border_width_bottom = 1
+	tracker_style.border_color = Color(0.0, 0.8, 0.8, 0.5)
+	tracker_style.corner_radius_top_left = 4
+	tracker_style.corner_radius_top_right = 4
+	tracker_style.corner_radius_bottom_right = 4
+	tracker_style.corner_radius_bottom_left = 4
+	quest_tracker_panel.add_theme_stylebox_override("panel", tracker_style)
+	
+	var tracker_vbox = VBoxContainer.new()
+	tracker_vbox.position = Vector2(10, 8)
+	tracker_vbox.custom_minimum_size = Vector2(330, 64)
+	quest_tracker_panel.add_child(tracker_vbox)
+	
+	var tracker_header = Label.new()
+	tracker_header.text = "ACTIVE CONTRACT"
+	tracker_header.add_theme_font_size_override("font_size", 11)
+	tracker_header.add_theme_color_override("font_color", Color(0.0, 0.9, 0.9))
+	tracker_vbox.add_child(tracker_header)
+	
+	quest_tracker_title = Label.new()
+	quest_tracker_title.text = "Contract Title"
+	quest_tracker_title.add_theme_font_size_override("font_size", 14)
+	tracker_vbox.add_child(quest_tracker_title)
+	
+	quest_tracker_progress = Label.new()
+	quest_tracker_progress.text = "Progress: 0 / 0"
+	quest_tracker_progress.add_theme_font_size_override("font_size", 13)
+	tracker_vbox.add_child(quest_tracker_progress)
+	
+	quest_tracker_panel.visible = false
 
 func _create_target_panel():
 	target_panel = PanelContainer.new()
@@ -399,12 +458,91 @@ func _create_dock_menu():
 	repair_btn.pressed.connect(_repair_ship)
 	vbox.add_child(repair_btn)
 	
+	agent_service_btn = Button.new()
+	agent_service_btn.text = "Talk to Agent"
+	agent_service_btn.pressed.connect(_on_talk_to_agent_pressed)
+	vbox.add_child(agent_service_btn)
+	
 	var undock_btn = Button.new()
 	undock_btn.text = "Undock Ship"
 	undock_btn.pressed.connect(undock_player)
 	vbox.add_child(undock_btn)
 	
 	dock_panel.visible = false
+	
+	# Construct Agent Panel
+	agent_panel = Panel.new()
+	add_child(agent_panel)
+	agent_panel.anchor_left = 0.3
+	agent_panel.anchor_right = 0.7
+	agent_panel.anchor_top = 0.2
+	agent_panel.anchor_bottom = 0.8
+	agent_panel.offset_left = 0
+	agent_panel.offset_right = 0
+	agent_panel.offset_top = 0
+	agent_panel.offset_bottom = 0
+	agent_panel.visible = false
+	
+	var agent_style = StyleBoxFlat.new()
+	agent_style.bg_color = Color(0.12, 0.12, 0.15, 1.0)
+	agent_style.border_width_left = 2
+	agent_style.border_width_top = 2
+	agent_style.border_width_right = 2
+	agent_style.border_width_bottom = 2
+	agent_style.border_color = Color(0.0, 0.8, 0.8, 1.0)
+	agent_style.corner_radius_top_left = 4
+	agent_style.corner_radius_top_right = 4
+	agent_style.corner_radius_bottom_right = 4
+	agent_style.corner_radius_bottom_left = 4
+	agent_panel.add_theme_stylebox_override("panel", agent_style)
+	
+	var avbox = VBoxContainer.new()
+	avbox.set_anchors_preset(Control.PRESET_FULL_RECT)
+	avbox.offset_left = 15
+	avbox.offset_right = -15
+	avbox.offset_top = 15
+	avbox.offset_bottom = -15
+	avbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	agent_panel.add_child(avbox)
+	
+	agent_name_label = Label.new()
+	agent_name_label.text = "BROKER KAELEN"
+	agent_name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	agent_name_label.add_theme_color_override("font_color", Color(0.0, 0.9, 0.9))
+	agent_name_label.add_theme_font_size_override("font_size", 18)
+	avbox.add_child(agent_name_label)
+	
+	var agent_subtitle = Label.new()
+	agent_subtitle.text = "Neutral Fixer & Profit Broker"
+	agent_subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	agent_subtitle.add_theme_font_size_override("font_size", 11)
+	agent_subtitle.modulate = Color(0.7, 0.7, 0.7)
+	avbox.add_child(agent_subtitle)
+	
+	var spacer = Control.new()
+	spacer.custom_minimum_size = Vector2(0, 10)
+	avbox.add_child(spacer)
+	
+	var dialogue_scroll = ScrollContainer.new()
+	dialogue_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	dialogue_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	avbox.add_child(dialogue_scroll)
+	
+	agent_dialogue_label = Label.new()
+	agent_dialogue_label.text = "What is your business here, pilot? If it doesn't make credits, it's not my concern."
+	agent_dialogue_label.autowrap_mode = TextServer.AUTOWRAP_WORD
+	agent_dialogue_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	agent_dialogue_label.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	dialogue_scroll.add_child(agent_dialogue_label)
+	
+	agent_choices_container = VBoxContainer.new()
+	agent_choices_container.alignment = BoxContainer.ALIGNMENT_CENTER
+	avbox.add_child(agent_choices_container)
+	
+	agent_back_btn = Button.new()
+	agent_back_btn.text = "Back to Services"
+	agent_back_btn.pressed.connect(_on_agent_back_pressed)
+	avbox.add_child(agent_back_btn)
 
 func _create_context_menu():
 	context_panel = Panel.new()
@@ -905,6 +1043,8 @@ func _on_cargo_changed(new_cargo: float):
 		# Play audio warning when cargo reaches max capacity
 		if new_cargo >= GlobalState.cargo_max:
 			AudioManager.play_cargo_full()
+			
+		_update_quest_tracker()
 
 func _on_pause_changed(is_paused: bool):
 	if pause_panel:
@@ -915,8 +1055,13 @@ func _on_pause_changed(is_paused: bool):
 # Station services methods
 func toggle_dock_menu(station: Node3D):
 	current_station = station
-	dock_panel.visible = not dock_panel.visible
-	if dock_panel.visible:
+	if dock_panel.visible or agent_panel.visible:
+		dock_panel.visible = false
+		agent_panel.visible = false
+		if GlobalState.player:
+			GlobalState.player.is_docked = false
+	else:
+		dock_panel.visible = true
 		# Update upgrade buttons prices/labels
 		upgrade_cargo_btn.text = "Upgrade Cargo Hold (+25 m³) - 100 SC"
 		upgrade_laser_btn.text = "Upgrade Mining Laser (+1 yield) - 150 SC"
@@ -924,12 +1069,10 @@ func toggle_dock_menu(station: Node3D):
 		if GlobalState.player:
 			GlobalState.player.is_docked = true
 			GlobalState.player.velocity = Vector3.ZERO
-	else:
-		if GlobalState.player:
-			GlobalState.player.is_docked = false
 
 func undock_player():
 	dock_panel.visible = false
+	agent_panel.visible = false
 	current_station = null
 	# Give player a slight push away from station
 	if GlobalState.player:
@@ -1333,3 +1476,153 @@ func set_overview_collapsed(collapsed: bool):
 		overview_panel.anchor_bottom = 0.65
 		
 	refresh_overview()
+
+# Agent dialogue screen & Quest tracker HUD interactions
+func _on_talk_to_agent_pressed():
+	dock_panel.visible = false
+	agent_panel.visible = true
+	
+	# Clear previous choice buttons
+	for child in agent_choices_container.get_children():
+		child.queue_free()
+		
+	if QuestManager.is_quest_active():
+		var q = QuestManager.active_quest
+		agent_name_label.text = q["agent_name"].to_upper()
+		
+		var type_str = "Clear Hostiles" if q["objective_type"] == "KILL_SHIPS" else "Deliver Resources"
+		agent_dialogue_label.text = "Active Contract: " + q["title"] + " (" + type_str + ")\n\n" + \
+			"Briefing: " + q["dialogue"] + "\n\n" + \
+			"Response choice accepted: '" + q["choice_text_selected"] + "'\n" + \
+			"Agent feedback: '" + q["agent_response"] + "'"
+			
+		agent_back_btn.visible = true
+		
+		# Create Complete button (enabled if objectives met)
+		var comp_btn = Button.new()
+		comp_btn.text = "Hand In Contract"
+		comp_btn.disabled = not QuestManager.is_quest_completed()
+		comp_btn.pressed.connect(_on_agent_complete_pressed)
+		agent_choices_container.add_child(comp_btn)
+		
+		# Create Abandon button
+		var abn_btn = Button.new()
+		abn_btn.text = "Abandon Contract"
+		abn_btn.pressed.connect(_on_agent_abandon_pressed)
+		agent_choices_container.add_child(abn_btn)
+	else:
+		_refresh_agent_quest_board()
+
+func _refresh_agent_quest_board():
+	agent_name_label.text = "BROKER KAELEN"
+	agent_dialogue_label.text = "Broker Kaelen is checking client contract requests..."
+	agent_back_btn.visible = false
+	
+	# Request new quest from local LLM / Fallback
+	QuestManager.request_new_quest("neutral", _on_quest_generated_received)
+
+func _on_quest_generated_received(quest_data: Dictionary, is_fallback: bool):
+	agent_back_btn.visible = true
+	
+	for child in agent_choices_container.get_children():
+		child.queue_free()
+		
+	if quest_data.is_empty():
+		agent_dialogue_label.text = "No contracts available right now. Check back later."
+		return
+		
+	var note = " [Offline Backup]" if is_fallback else ""
+	agent_dialogue_label.text = quest_data.get("dialogue", "") + note
+	agent_name_label.text = quest_data.get("agent_name", "Broker Kaelen").to_upper()
+	
+	# Append client faction details
+	var f_client = quest_data.get("faction", "neutral").to_upper()
+	var obj = quest_data.get("objective", {})
+	var obj_type = obj.get("type", "UNKNOWN")
+	var amt_info = ""
+	if obj_type == "DELIVER_ORE":
+		amt_info = str(int(obj.get("amount_required", 20))) + " m³ Ore"
+	elif obj_type == "KILL_SHIPS":
+		var target_fac = obj.get("target_faction", "zenith").to_upper()
+		amt_info = "Destroy " + str(obj.get("count_required", 3)) + " " + target_fac + " ships"
+		
+	agent_dialogue_label.text += "\n\n--- Contract Details ---\n" + \
+		"Client: " + f_client + "\n" + \
+		"Objective: " + amt_info + "\n" + \
+		"Base Reward: " + str(obj.get("reward_credits", 150)) + " SC"
+	
+	var choices = quest_data.get("choices", [])
+	for choice in choices:
+		var choice_btn = Button.new()
+		choice_btn.text = choice.get("text", "Accept Option")
+		choice_btn.pressed.connect(func(): _on_choice_selected(quest_data, choice))
+		agent_choices_container.add_child(choice_btn)
+
+func _on_choice_selected(quest_data: Dictionary, choice: Dictionary):
+	# Clear choices container
+	for child in agent_choices_container.get_children():
+		child.queue_free()
+		
+	# Accept quest
+	QuestManager.accept_quest(quest_data, choice)
+	
+	var consequence = choice.get("consequence", {})
+	agent_dialogue_label.text = consequence.get("dialogue_response", "Contract confirmed. Get it done.")
+	agent_back_btn.visible = false
+	
+	# Create undock confirmation button
+	var launch_btn = Button.new()
+	launch_btn.text = "Undock & Begin Mission"
+	launch_btn.pressed.connect(undock_player)
+	agent_choices_container.add_child(launch_btn)
+
+func _on_agent_back_pressed():
+	agent_panel.visible = false
+	dock_panel.visible = true
+
+func _on_agent_complete_pressed():
+	for child in agent_choices_container.get_children():
+		child.queue_free()
+		
+	QuestManager.complete_quest()
+	
+	agent_dialogue_label.text = "Pleasure doing business with you, pilot. Payout transferred and brokerage fee deducted. Check back soon."
+	agent_back_btn.visible = true
+
+func _on_agent_abandon_pressed():
+	for child in agent_choices_container.get_children():
+		child.queue_free()
+		
+	QuestManager.abandon_quest()
+	
+	agent_dialogue_label.text = "Contract dumped? You're costing me credit margins. I don't forget when people waste my time."
+	agent_back_btn.visible = true
+
+func _on_quest_accepted():
+	quest_tracker_panel.visible = true
+	_update_quest_tracker()
+
+func _on_quest_progress_updated():
+	_update_quest_tracker()
+
+func _on_quest_completed():
+	quest_tracker_panel.visible = false
+
+func _on_quest_abandoned():
+	quest_tracker_panel.visible = false
+
+func _update_quest_tracker():
+	if not QuestManager.is_quest_active():
+		quest_tracker_panel.visible = false
+		return
+		
+	quest_tracker_panel.visible = true
+	var q = QuestManager.active_quest
+	quest_tracker_title.text = q["title"]
+	
+	if q["objective_type"] == "KILL_SHIPS":
+		quest_tracker_progress.text = "Kills: " + str(q["current_count"]) + " / " + str(q["count_required"]) + " (" + q["target_faction"].to_upper() + ")"
+	elif q["objective_type"] == "DELIVER_ORE":
+		quest_tracker_progress.text = "Ore: " + str(int(GlobalState.cargo)) + " / " + str(int(q["amount_required"])) + " m³"
+		if GlobalState.cargo >= q["amount_required"]:
+			quest_tracker_progress.text += " (Ready)"
