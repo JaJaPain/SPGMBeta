@@ -19,12 +19,23 @@ func _ready():
 	_spawn_asteroid_ring(rocky_planet.global_position, 370.0, 80.0, 45, "RockyBelt")
 	
 	# Spawn NPC Ships
-	_spawn_npc("caldari", Vector3(15, 0, 50), 12.0)
-	_spawn_npc("caldari", Vector3(-20, 0, 60), 12.0)
-	_spawn_npc("amarr", rocky_planet.global_position + Vector3(40, 0, 40), 14.0)
-	_spawn_npc("amarr", rocky_planet.global_position + Vector3(-50, 0, -40), 14.0)
-	_spawn_npc("minmatar", gas_giant.global_position + Vector3(50, 0, 50), 15.0)
-	_spawn_npc("minmatar", gas_giant.global_position + Vector3(-60, 0, -60), 15.0)
+	_spawn_npc("zenith", Vector3(120, 0, 180), 12.0)
+	_spawn_npc("zenith", Vector3(-120, 0, 190), 12.0)
+	
+	# Close hostiles for easy testing near start area
+	_spawn_npc("aurelia", Vector3(90, 0, 80), 14.0)
+	_spawn_npc("vanguard", Vector3(-90, 0, 80), 15.0)
+	
+	# Hostiles around Rocky Planet
+	_spawn_npc("aurelia", rocky_planet.global_position + Vector3(40, 0, 40), 14.0)
+	_spawn_npc("aurelia", rocky_planet.global_position + Vector3(-50, 0, -40), 14.0)
+	_spawn_npc("aurelia", rocky_planet.global_position + Vector3(0, 0, -80), 14.0)
+	
+	# Hostiles around Gas Giant
+	_spawn_npc("vanguard", gas_giant.global_position + Vector3(50, 0, 50), 15.0)
+	_spawn_npc("vanguard", gas_giant.global_position + Vector3(-60, 0, -60), 15.0)
+	_spawn_npc("vanguard", gas_giant.global_position + Vector3(80, 0, 0), 15.0)
+
 	
 	# Populating Overview list
 	_populate_overview()
@@ -63,22 +74,5 @@ func _spawn_npc(faction_name: String, pos: Vector3, npc_speed: float):
 	npc.global_position = pos
 
 func _populate_overview():
-	# Gather all entities we want in the overview list
-	var entities: Array = []
-	
-	# Add Stations, Planets, and Ships
-	entities.append(station)
-	entities.append(gas_giant)
-	entities.append(rocky_planet)
-	
-	# Add Asteroids
-	for node in get_tree().get_nodes_in_group("asteroid"):
-		entities.append(node)
-		
-	# Add NPC Ships
-	for node in get_tree().get_nodes_in_group("ship"):
-		if node != GlobalState.player:
-			entities.append(node)
-			
-	if ui_manager:
-		ui_manager.update_overview_list(entities)
+	if ui_manager and ui_manager.has_method("refresh_overview"):
+		ui_manager.refresh_overview()

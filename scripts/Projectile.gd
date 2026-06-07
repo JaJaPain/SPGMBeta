@@ -33,7 +33,7 @@ func _on_body_entered(body: Node):
 	if body.has_method("take_damage"):
 		var body_faction = body.get("faction")
 		if body_faction != faction:
-			body.take_damage(damage)
+			body.take_damage(damage, faction)
 			# Spawn explosion FX here if desired
 			queue_free()
 	elif body.is_in_group("asteroid") and faction == "player":

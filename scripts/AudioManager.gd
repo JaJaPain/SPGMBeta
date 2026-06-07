@@ -5,19 +5,33 @@ var sfx_players: Array[AudioStreamPlayer] = []
 var max_sfx_channels: int = 8
 
 # Audio Streams
-var bgm_track1 = preload("res://BackgroundMusic/Iron Lullaby1.mp3")
-var bgm_track2 = preload("res://BackgroundMusic/Iron Lullaby2.mp3")
-var sfx_laser1 = preload("res://WeaponFire/Laser Weapon Firing1.mp3")
-var sfx_laser2 = preload("res://WeaponFire/Laser Weapon Firing2.mp3")
-var sfx_explosion1 = preload("res://SpaceShipExplosion/Spaceship Explosion1.mp3")
-var sfx_explosion2 = preload("res://SpaceShipExplosion/Spaceship Explosion2.mp3")
+var bgm_track1 = preload("res://sound/BackgroundMusic/Iron Lullaby1.mp3")
+var bgm_track2 = preload("res://sound/BackgroundMusic/Iron Lullaby2.mp3")
+var sfx_laser1 = preload("res://sound/WeaponFire/Laser Weapon Firing1.mp3")
+var sfx_laser2 = preload("res://sound/WeaponFire/Laser Weapon Firing2.mp3")
+var sfx_explosion1 = preload("res://sound/SpaceShipExplosion/Spaceship Explosion1.mp3")
+var sfx_explosion2 = preload("res://sound/SpaceShipExplosion/Spaceship Explosion2.mp3")
 var sfx_cargo_full = preload("res://assets/Cargo Full.mp3")
+var sfx_align: AudioStream = null
 
 var tracks: Array = []
 var current_track_idx: int = 0
 
 func _ready():
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	
+	# Ensure Music and SFX buses exist in AudioServer
+	var music_bus_idx = AudioServer.get_bus_index("Music")
+	if music_bus_idx == -1:
+		AudioServer.add_bus()
+		music_bus_idx = AudioServer.get_bus_count() - 1
+		AudioServer.set_bus_name(music_bus_idx, "Music")
+		
+	var sfx_bus_idx = AudioServer.get_bus_index("SFX")
+	if sfx_bus_idx == -1:
+		AudioServer.add_bus()
+		sfx_bus_idx = AudioServer.get_bus_count() - 1
+		AudioServer.set_bus_name(sfx_bus_idx, "SFX")
 	
 	# Setup BGM Player
 	bgm_player = AudioStreamPlayer.new()
@@ -71,3 +85,37 @@ func play_explosion():
 
 func play_cargo_full():
 	play_sfx(sfx_cargo_full, 0.0)
+
+func set_music_volume(value: float):
+	var idx = AudioServer.get_bus_index("Music")
+	if idx != -1:
+		AudioServer.set_bus_volume_db(idx, linear_to_db(value))
+		AudioServer.set_bus_mute(idx, value <= 0.0001)
+
+func get_music_volume() -> float:
+	var idx = AudioServer.get_bus_index("Music")
+	if idx != -1:
+		if AudioServer.is_bus_mute(idx):
+			return 0.0
+		return db_to_linear(AudioServer.get_bus_volume_db(idx))
+	return 1.0
+
+func set_sfx_volume(value: float):
+	var idx = AudioServer.get_bus_index("SFX")
+	if idx != -1:
+		AudioServer.set_bus_volume_db(idx, linear_to_db(value))
+		AudioServer.set_bus_mute(idx, value <= 0.0001)
+
+func get_sfx_volume() -> float:
+	var idx = AudioServer.get_bus_index("SFX")
+	if idx != -1:
+		if AudioServer.is_bus_mute(idx):
+			return 0.0
+		return db_to_linear(AudioServer.get_bus_volume_db(idx))
+	return 1.0
+
+func play_align():
+	if sfx_align == null:
+		sfx_align = load("res://sound/ShipSounds/ShipAlignSound.mp3")
+	if sfx_align:
+		play_sfx(sfx_align, -4.0)

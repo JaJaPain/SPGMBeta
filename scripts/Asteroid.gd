@@ -1,4 +1,4 @@
-extends StaticBody3D
+extends AnimatableBody3D
 
 @export var max_resources: float = 300.0
 var resources: float = 300.0

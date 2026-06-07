@@ -7,3 +7,23 @@ Godot/
 # OS-specific files
 .DS_Store
 Thumbs.db
+
+# Audio files
+*.mp3
+*.wav
+*.ogg
+*.mp3.import
+*.wav.import
+*.ogg.import
+
+# 3D Models and meshes
+*.glb
+*.gltf
+*.obj
+*.fbx
+*.dae
+*.glb.import
+*.gltf.import
+*.obj.import
+*.fbx.import
+*.dae.import
