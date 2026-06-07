@@ -585,7 +585,7 @@ func _create_dock_menu():
 	agent_hbox.offset_bottom = -15
 	agent_panel.add_child(agent_hbox)
 	
-	# Left Side: Portraits and Client Branding
+	# Left Side: Agent Portrait
 	var portrait_vbox = VBoxContainer.new()
 	portrait_vbox.custom_minimum_size = Vector2(180, 0)
 	portrait_vbox.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -597,17 +597,6 @@ func _create_dock_menu():
 	agent_portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	portrait_vbox.add_child(agent_portrait)
 	
-	var logo_spacer = Control.new()
-	logo_spacer.custom_minimum_size = Vector2(0, 15)
-	portrait_vbox.add_child(logo_spacer)
-	
-	agent_client_logo = TextureRect.new()
-	agent_client_logo.custom_minimum_size = Vector2(100, 100)
-	agent_client_logo.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	agent_client_logo.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	agent_client_logo.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	portrait_vbox.add_child(agent_client_logo)
-	
 	var col_spacer = Control.new()
 	col_spacer.custom_minimum_size = Vector2(20, 0)
 	agent_hbox.add_child(col_spacer)
@@ -618,19 +607,35 @@ func _create_dock_menu():
 	avbox.alignment = BoxContainer.ALIGNMENT_CENTER
 	agent_hbox.add_child(avbox)
 	
+	# Header Layout containing title, subtitle, and faction branding logo on the right
+	var header_hbox = HBoxContainer.new()
+	header_hbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	avbox.add_child(header_hbox)
+	
+	var name_vbox = VBoxContainer.new()
+	name_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	header_hbox.add_child(name_vbox)
+	
 	agent_name_label = Label.new()
 	agent_name_label.text = "BROKER KAELEN"
 	agent_name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	agent_name_label.add_theme_color_override("font_color", Color(0.0, 0.9, 0.9))
 	agent_name_label.add_theme_font_size_override("font_size", 18)
-	avbox.add_child(agent_name_label)
+	name_vbox.add_child(agent_name_label)
 	
 	var agent_subtitle = Label.new()
 	agent_subtitle.text = "Neutral Fixer & Profit Broker"
 	agent_subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	agent_subtitle.add_theme_font_size_override("font_size", 11)
 	agent_subtitle.modulate = Color(0.7, 0.7, 0.7)
-	avbox.add_child(agent_subtitle)
+	name_vbox.add_child(agent_subtitle)
+	
+	agent_client_logo = TextureRect.new()
+	agent_client_logo.custom_minimum_size = Vector2(64, 64)
+	agent_client_logo.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	agent_client_logo.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	agent_client_logo.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	header_hbox.add_child(agent_client_logo)
 	
 	var spacer = Control.new()
 	spacer.custom_minimum_size = Vector2(0, 10)
