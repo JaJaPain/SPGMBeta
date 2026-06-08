@@ -210,10 +210,10 @@ func _create_hud():
 	rep_lbl.text = "Rep: ZEN 50 | AUR -20 | VAN -20"
 	vbox.add_child(rep_lbl)
 	
-	# Quest Tracker HUD Panel (positioned at Vector2(20, 190) with horizontal layout)
+	# Quest Tracker HUD Panel (positioned at Vector2(20, 220) with horizontal layout)
 	quest_tracker_panel = Panel.new()
 	quest_tracker_panel.custom_minimum_size = Vector2(360, 80)
-	quest_tracker_panel.position = Vector2(20, 190)
+	quest_tracker_panel.position = Vector2(20, 220)
 	add_child(quest_tracker_panel)
 	
 	var tracker_style = StyleBoxFlat.new()

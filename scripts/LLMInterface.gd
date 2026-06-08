@@ -502,3 +502,103 @@ func fetch_chatter_background(type: String):
 	if err != OK:
 		active_fetches[type] = false
 		temp_http.queue_free()
+
+var fallback_salvager_names = [
+	"Maeve Sterling",
+	"Rorik Flint",
+	"Tess Torv",
+	"Garrick Vance",
+	"Sloane Mercer",
+	"Jaxom Cruz",
+	"Kira Thorne",
+	"Caelen Drake"
+]
+
+var fallback_salvager_backstories = [
+	"A veteran miner from the outer rim who spent years scraping ore from derelict structures. Dislikes corporate faction politics.",
+	"A rogue salvager who runs a modified engine loop. Specializes in recovering high-grade alloys from deep space wreckages.",
+	"A former Vanguard logistics engineer who went independent. Loves the quiet freedom of the deep belts and black market scrap.",
+	"An opportunistic scrapper who believes every piece of debris has a story and a price. Always looking for the next big haul.",
+	"A cynical belt-miner who survived a Zenith mine collapse. Now works alone, trusting only their sensors and their lasers.",
+	"A young, ambitious pilot who bought a salvaged hauler. Eager to make a name and a fortune in the contested border zones."
+]
+
+func fetch_salvager_profile(callback: Callable):
+	var temp_http = HTTPRequest.new()
+	add_child(temp_http)
+	temp_http.timeout = 4.0
+	
+	temp_http.request_completed.connect(func(result, response_code, headers, body):
+		temp_http.queue_free()
+		
+		# If request fails or times out, trigger fallback
+		if result != HTTPRequest.RESULT_SUCCESS or response_code != 200:
+			_trigger_salvager_profile_fallback(callback)
+			return
+			
+		var response_text = body.get_string_from_utf8()
+		var json = JSON.new()
+		var err = json.parse(response_text)
+		if err != OK:
+			_trigger_salvager_profile_fallback(callback)
+			return
+			
+		var outer_data = json.get_data()
+		if not outer_data is Dictionary or not outer_data.has("response"):
+			_trigger_salvager_profile_fallback(callback)
+			return
+			
+		var inner_json_str = outer_data["response"].strip_edges()
+		
+		# Strip markdown codeblocks
+		if inner_json_str.begins_with("```"):
+			var end_idx = inner_json_str.find("\n", 3)
+			if end_idx != -1:
+				inner_json_str = inner_json_str.substr(end_idx + 1)
+			if inner_json_str.ends_with("```"):
+				inner_json_str = inner_json_str.substr(0, inner_json_str.length() - 3)
+			inner_json_str = inner_json_str.strip_edges()
+			
+		var inner_json = JSON.new()
+		var inner_err = inner_json.parse(inner_json_str)
+		if inner_err != OK:
+			_trigger_salvager_profile_fallback(callback)
+			return
+			
+		var profile_data = inner_json.get_data()
+		if profile_data is Dictionary and profile_data.has("name") and profile_data.has("backstory"):
+			callback.call(profile_data)
+		else:
+			_trigger_salvager_profile_fallback(callback)
+	)
+	
+	var prompt = "Generate a unique sci-fi scrapper/miner pilot name and a short (2-3 sentences) backstory. " + \
+		"The pilot operates a salvager ship in the sector. The backstory should detail their origins, their ship name, and their scrapper personality. " + \
+		"You MUST respond strictly in valid JSON format matching this schema exactly. Do not output any notes, markdown codeblock formatting, or surrounding text. Only output the raw JSON object:\n" + \
+		"{\n" + \
+		"  \"name\": \"[Pilot Name]\",\n" + \
+		"  \"backstory\": \"[Backstory Text]\"\n" + \
+		"}"
+		
+	var payload = {
+		"model": MODEL_NAME,
+		"prompt": prompt,
+		"stream": false,
+		"format": "json"
+	}
+	
+	var json_str = JSON.stringify(payload)
+	var headers = ["Content-Type: application/json"]
+	var err = temp_http.request(OLLAMA_URL, headers, HTTPClient.METHOD_POST, json_str)
+	if err != OK:
+		temp_http.queue_free()
+		_trigger_salvager_profile_fallback(callback)
+
+func _trigger_salvager_profile_fallback(callback: Callable):
+	var rand_name = fallback_salvager_names[randi() % fallback_salvager_names.size()]
+	var rand_backstory = fallback_salvager_backstories[randi() % fallback_salvager_backstories.size()]
+	var profile = {
+		"name": rand_name,
+		"backstory": rand_backstory
+	}
+	callback.call(profile)

@@ -93,16 +93,46 @@ func _spawn_salvager():
 	if salvager_script:
 		var salvager = CharacterBody3D.new()
 		salvager.set_script(salvager_script)
-		salvager.name = "NPC_Salvager"
+		salvager.name = "Scrapper_Flint"
 		add_child(salvager)
 		# Spawn near space station
 		if station:
 			salvager.global_position = station.global_position + Vector3(0, 0, 50.0)
+			
+		# Generate unique scrapper pilot name and backstory
+		_generate_salvager_identity(salvager)
 
 func _on_salvager_destroyed():
 	# Respawn after 30 seconds
 	var respawn_timer = get_tree().create_timer(30.0)
 	respawn_timer.timeout.connect(_spawn_salvager)
+
+func _generate_salvager_identity(salvager: Node3D):
+	if not is_instance_valid(salvager):
+		return
+		
+	LLMInterface.fetch_salvager_profile(func(profile_data: Dictionary):
+		if not is_instance_valid(salvager):
+			return
+		var p_name = profile_data.get("name", "Maeve Sterling")
+		var p_backstory = profile_data.get("backstory", "An independent scrapper looking for high-yield metals in the asteroid belts.")
+		
+		# Rename the salvager node
+		salvager.name = p_name
+		
+		# Save backstory MD
+		var file = FileAccess.open("user://salvager_backstory.md", FileAccess.WRITE)
+		if file:
+			file.store_line("# PILOT PROFILE: " + p_name.to_upper())
+			file.store_line("\n**Role:** Independent Salvager")
+			file.store_line("\n**Backstory:**")
+			file.store_line(p_backstory)
+			file.close()
+			print("[MainScene] Saved pilot backstory to user://salvager_backstory.md")
+			
+		# Broadcast to system comms
+		GlobalState.emit_chatter("SYSTEM", "Comms link established with independent scrapper: " + p_name, Color(0.0, 0.9, 0.9))
+	)
 
 func _on_npc_spawn_timeout():
 	if GlobalState.destroyed_ships_pool > 0:
