@@ -1095,7 +1095,7 @@ func update_overview_list(entities: Array):
 			var row_color: Color
 			if type_str == "Space Station":
 				row_color = Color(0.25, 0.95, 0.45)   # Bright docking green
-			elif type_str == "Celestial" or type_str == "Asteroid":
+			elif type_str == "Celestial":
 				row_color = Color(0.35, 0.65, 1.0)    # Soft celestial blue
 			else:
 				row_color = Color(1.0, 1.0, 1.0)      # Default white for ships, wreckage etc.
