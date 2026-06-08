@@ -337,6 +337,11 @@ func _discover_ollama_model():
 			llm_connected = true
 			llm_connection_established.emit(active_model_name)
 			model_discovered.emit(active_model_name)
+			# Pre-warm ALL chatter caches immediately so static fallback lines
+			# are never used during the first combat encounter
+			print("[TRACE] [LLMInterface] Pre-warming chatter caches...")
+			for chatter_type in chatter_cache.keys():
+				fetch_chatter_background(chatter_type)
 		else:
 			print("[LLMInterface] Connection to Ollama failed (attempt %d). Retrying in 1.5s..." % connection_attempts)
 			get_tree().create_timer(1.5).timeout.connect(_discover_ollama_model)

@@ -54,12 +54,14 @@ var faction_kills: Dictionary = {
 }
 
 func record_kill(faction_name: String):
-	if faction_kills.has(faction_name):
-		faction_kills[faction_name] += 1
-		ship_destroyed.emit(faction_name)
-		# If the player has killed a multiple of 3 ships of this faction, call in a "big gun"
-		if faction_kills[faction_name] % 3 == 0:
-			spawn_reinforcement(faction_name)
+	# Track kills for ANY faction — including LLM-generated custom ones
+	if not faction_kills.has(faction_name):
+		faction_kills[faction_name] = 0
+	faction_kills[faction_name] += 1
+	ship_destroyed.emit(faction_name)
+	# Only call in reinforcements for the three main factions (they have matching ship scenes)
+	if faction_name in ["zenith", "aurelia", "vanguard"] and faction_kills[faction_name] % 3 == 0:
+		spawn_reinforcement(faction_name)
 
 func spawn_reinforcement(faction_name: String):
 	var player_node = player
