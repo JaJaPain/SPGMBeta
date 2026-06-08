@@ -62,6 +62,15 @@ var cached_quest_data: Dictionary = {}
 var cached_quest_is_fallback: bool = false
 var is_waiting_for_agent_board: bool = false
 
+var loading_panel: Panel
+var loading_bar: ProgressBar
+var loading_status_label: Label
+
+var is_llm_ready: bool = false
+var is_tts_ready: bool = false
+var last_llm_attempt: int = 0
+var last_tts_attempt: int = 0
+
 # Sorting parameters
 var sort_column: String = "distance"
 var sort_ascending: bool = true
@@ -142,6 +151,15 @@ func _ready():
 	_on_credits_changed(GlobalState.player_credits)
 	_on_cargo_changed(GlobalState.cargo)
 	_on_target_changed(GlobalState.active_target)
+	
+	# Initialize startup loading screen to pre-cache the first quest & TTS
+	_create_loading_screen()
+	GlobalState.paused = true
+	
+	LLMInterface.llm_connection_attempt.connect(_on_llm_connection_attempt)
+	LLMInterface.llm_connection_established.connect(_on_llm_connected)
+	TTSInterface.tts_connection_attempt.connect(_on_tts_connection_attempt)
+	TTSInterface.tts_connection_established.connect(_on_tts_connected)
 
 func _process(delta):
 	if GlobalState.paused: return
@@ -929,6 +947,8 @@ func _create_death_screen():
 
 func _unhandled_input(event: InputEvent):
 	if event.is_action_pressed("pause_game"):
+		if loading_panel and is_instance_valid(loading_panel):
+			return
 		GlobalState.paused = not GlobalState.paused
 
 # Overview list population
@@ -1171,9 +1191,12 @@ func _on_cargo_changed(new_cargo: float):
 
 func _on_pause_changed(is_paused: bool):
 	if pause_panel:
-		pause_panel.visible = is_paused
-		if is_paused:
-			move_child(pause_panel, -1)
+		if is_paused and loading_panel and is_instance_valid(loading_panel):
+			pause_panel.visible = false
+		else:
+			pause_panel.visible = is_paused
+			if is_paused:
+				move_child(pause_panel, -1)
 
 # Station services methods
 func toggle_dock_menu(station: Node3D):
@@ -1690,6 +1713,15 @@ func _on_background_quest_generated(quest_data: Dictionary, is_fallback: bool):
 	if is_waiting_for_agent_board:
 		is_waiting_for_agent_board = false
 		_on_quest_generated_received(cached_quest_data, cached_quest_is_fallback)
+		
+	# If loading panel is still visible, wait for TTS cache completion
+	if loading_panel and is_instance_valid(loading_panel):
+		TTSInterface.cache_queue_completed.connect(_on_tts_cache_completed)
+		if TTSInterface.active_cache_requests <= 0:
+			_on_tts_cache_completed()
+		else:
+			loading_bar.value = 80.0
+			loading_status_label.text = "Pre-caching synthesized broker voice lines..."
 
 func _on_quest_generated_received(quest_data: Dictionary, is_fallback: bool):
 	var now = Time.get_ticks_msec()
@@ -1767,6 +1799,10 @@ func _on_choice_selected(quest_data: Dictionary, choice: Dictionary):
 	launch_btn.text = "Undock & Begin Mission"
 	launch_btn.pressed.connect(undock_player)
 	agent_choices_container.add_child(launch_btn)
+	
+	# Start pre-caching the NEXT quest immediately in the background
+	print("[TRACE] [UIManager] Quest accepted. Starting pre-caching of the next contract.")
+	QuestManager.request_new_quest("neutral", _on_background_quest_generated)
 
 func _on_agent_back_pressed():
 	# Stop voice dialogue audio
@@ -1777,8 +1813,6 @@ func _on_agent_back_pressed():
 func _on_agent_complete_pressed():
 	TTSInterface.start_interaction("Complete Contract")
 	
-	cached_quest_data = {}
-	cached_quest_is_fallback = false
 	is_waiting_for_agent_board = false
 	
 	for child in agent_choices_container.get_children():
@@ -1790,15 +1824,14 @@ func _on_agent_complete_pressed():
 	TTSInterface.play_dialogue_audio(agent_dialogue_label.text)
 	agent_back_btn.visible = true
 	
-	# Start pre-caching the next quest in the background
-	print("[TRACE] [UIManager] Quest finished. Pre-caching next quest in the background.")
-	QuestManager.request_new_quest("neutral", _on_background_quest_generated)
+	# If for some reason the cache is empty, request one now
+	if cached_quest_data.is_empty() and not LLMInterface.is_waiting:
+		print("[TRACE] [UIManager] Cache empty on complete. Pre-caching next quest.")
+		QuestManager.request_new_quest("neutral", _on_background_quest_generated)
 
 func _on_agent_abandon_pressed():
 	TTSInterface.start_interaction("Abandon Contract")
 	
-	cached_quest_data = {}
-	cached_quest_is_fallback = false
 	is_waiting_for_agent_board = false
 	
 	for child in agent_choices_container.get_children():
@@ -1810,9 +1843,10 @@ func _on_agent_abandon_pressed():
 	TTSInterface.play_dialogue_audio(agent_dialogue_label.text)
 	agent_back_btn.visible = true
 	
-	# Start pre-caching the next quest in the background
-	print("[TRACE] [UIManager] Quest finished. Pre-caching next quest in the background.")
-	QuestManager.request_new_quest("neutral", _on_background_quest_generated)
+	# If for some reason the cache is empty, request one now
+	if cached_quest_data.is_empty() and not LLMInterface.is_waiting:
+		print("[TRACE] [UIManager] Cache empty on abandon. Pre-caching next quest.")
+		QuestManager.request_new_quest("neutral", _on_background_quest_generated)
 
 func _on_quest_accepted():
 	quest_tracker_panel.visible = true
@@ -1929,3 +1963,136 @@ func add_chat_message(sender: String, message: String, sender_color: Color):
 	await get_tree().process_frame
 	if chat_scroll:
 		chat_scroll.scroll_vertical = int(chat_vbox.size.y)
+
+func _create_loading_screen():
+	loading_panel = Panel.new()
+	loading_panel.name = "LoadingScreen"
+	loading_panel.set_anchors_preset(Control.PRESET_FULL_RECT)
+	add_child(loading_panel)
+	
+	# Frosted cyber-dark style
+	var style = StyleBoxFlat.new()
+	style.bg_color = Color(0.04, 0.04, 0.06, 0.98) # Dark deep space blue-black
+	style.border_width_left = 2
+	style.border_width_top = 2
+	style.border_width_right = 2
+	style.border_width_bottom = 2
+	style.border_color = Color(0.0, 0.85, 1.0, 0.4) # Neon cyan border accent
+	loading_panel.add_theme_stylebox_override("panel", style)
+	
+	var vbox = VBoxContainer.new()
+	vbox.set_anchors_preset(Control.PRESET_CENTER)
+	vbox.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	vbox.grow_vertical = Control.GROW_DIRECTION_BOTH
+	vbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	vbox.custom_minimum_size = Vector2(500, 250)
+	loading_panel.add_child(vbox)
+	
+	var title = Label.new()
+	title.text = "SPACE GRID INTRUSION"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 24)
+	title.add_theme_color_override("font_color", Color(0.0, 0.85, 1.0)) # Neon cyan
+	vbox.add_child(title)
+	
+	var subtitle = Label.new()
+	subtitle.text = "Syncing Neural Broker Uplink..."
+	subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	subtitle.add_theme_font_size_override("font_size", 12)
+	subtitle.modulate = Color(0.7, 0.7, 0.7)
+	vbox.add_child(subtitle)
+	
+	var spacer = Control.new()
+	spacer.custom_minimum_size = Vector2(0, 30)
+	vbox.add_child(spacer)
+	
+	loading_bar = ProgressBar.new()
+	loading_bar.custom_minimum_size = Vector2(450, 16)
+	loading_bar.max_value = 100.0
+	loading_bar.value = 5.0
+	vbox.add_child(loading_bar)
+	
+	loading_status_label = Label.new()
+	loading_status_label.text = "Initializing core connection to local LLM..."
+	loading_status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	loading_status_label.add_theme_font_size_override("font_size", 11)
+	loading_status_label.modulate = Color(0.0, 0.8, 0.8)
+	vbox.add_child(loading_status_label)
+
+func _on_llm_connection_attempt(attempt: int):
+	last_llm_attempt = attempt
+	_update_connection_status_display()
+
+func _on_llm_connected(model_name: String):
+	is_llm_ready = true
+	_update_connection_status_display()
+	_check_both_services_ready()
+
+func _on_tts_connection_attempt(attempt: int):
+	last_tts_attempt = attempt
+	_update_connection_status_display()
+
+func _on_tts_connected():
+	is_tts_ready = true
+	_update_connection_status_display()
+	_check_both_services_ready()
+
+func _update_connection_status_display():
+	if not loading_status_label or not is_instance_valid(loading_status_label):
+		return
+		
+	var llm_status = ""
+	if is_llm_ready:
+		llm_status = "LLM: Connected"
+	else:
+		llm_status = "LLM: Connecting... (Attempt %d)" % last_llm_attempt
+		
+	var tts_status = ""
+	if is_tts_ready:
+		tts_status = "TTS: Connected"
+	else:
+		tts_status = "TTS: Connecting... (Attempt %d)" % last_tts_attempt
+		
+	loading_status_label.text = "%s | %s" % [llm_status, tts_status]
+	
+	# Initial progress bar increments
+	var progress = 5.0
+	if is_llm_ready: progress += 10.0
+	if is_tts_ready: progress += 10.0
+	loading_bar.value = progress
+
+func _check_both_services_ready():
+	if is_llm_ready and is_tts_ready:
+		print("[TRACE] [UIManager] Both services connected! Starting first quest generation.")
+		loading_bar.value = 35.0
+		loading_status_label.text = "Syncing Neural Broker Uplink: Generating first contract briefing..."
+		
+		# Disconnect signals to avoid multiple calls if reconnection happens later
+		if LLMInterface.llm_connection_attempt.is_connected(_on_llm_connection_attempt):
+			LLMInterface.llm_connection_attempt.disconnect(_on_llm_connection_attempt)
+		if LLMInterface.llm_connection_established.is_connected(_on_llm_connected):
+			LLMInterface.llm_connection_established.disconnect(_on_llm_connected)
+		if TTSInterface.tts_connection_attempt.is_connected(_on_tts_connection_attempt):
+			TTSInterface.tts_connection_attempt.disconnect(_on_tts_connection_attempt)
+		if TTSInterface.tts_connection_established.is_connected(_on_tts_connected):
+			TTSInterface.tts_connection_established.disconnect(_on_tts_connected)
+			
+		QuestManager.request_new_quest("neutral", _on_background_quest_generated)
+
+func _on_tts_cache_completed():
+	# Disconnect to prevent double trigger on future cache events
+	if TTSInterface.cache_queue_completed.is_connected(_on_tts_cache_completed):
+		TTSInterface.cache_queue_completed.disconnect(_on_tts_cache_completed)
+		
+	print("[TRACE] [UIManager] Loading Screen: TTS caching fully completed!")
+	loading_bar.value = 100.0
+	loading_status_label.text = "Uplink fully secured. System Ready."
+	
+	var tween = create_tween()
+	tween.tween_interval(0.8) # Show 100% briefly
+	tween.tween_property(loading_panel, "modulate:a", 0.0, 0.6)
+	tween.tween_callback(func():
+		loading_panel.queue_free()
+		GlobalState.paused = false # Resume gameplay!
+		print("[TRACE] [UIManager] Loading Screen completed. Game started!")
+	)

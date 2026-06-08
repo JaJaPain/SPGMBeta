@@ -1,6 +1,6 @@
 extends Node
 
-const TTS_URL = "http://localhost:5000/tts"
+const TTS_URL = "http://127.0.0.1:5000/tts"
 var http_request: HTTPRequest
 var audio_player: AudioStreamPlayer
 var is_requesting: bool = false
@@ -9,6 +9,16 @@ var tts_request_time: float = 0.0
 var last_interaction_time: float = 0.0
 var last_interaction_name: String = ""
 var tts_audio_cache: Dictionary = {}
+
+signal cache_queue_completed()
+var active_cache_requests: int = 0
+
+signal tts_connection_attempt(attempt: int)
+signal tts_connection_established()
+
+var tts_connected: bool = false
+var tts_connection_attempts: int = 0
+var cache_queue: Array[String] = []
 
 func start_interaction(interaction_name: String):
 	last_interaction_time = Time.get_ticks_msec()
@@ -28,7 +38,7 @@ func _ready():
 	audio_player.bus = "SFX"
 	add_child(audio_player)
 	
-	_check_and_start_tts_server()
+	_discover_and_verify_tts()
 	
 	# Pre-cache static completion and abandon messages
 	cache_dialogue_audio("Pleasure doing business with you, pilot. Payout transferred and brokerage fee deducted. Check back soon.")
@@ -91,6 +101,12 @@ func cache_dialogue_audio(text: String):
 	if clean_text == "" or tts_audio_cache.has(clean_text):
 		return
 		
+	if not tts_connected:
+		if not cache_queue.has(clean_text):
+			cache_queue.append(clean_text)
+			print("[TRACE] [TTSInterface] Queueing cache request (TTS not connected): ", clean_text.hash())
+		return
+		
 	# Create a dynamic HTTPRequest node for caching
 	var temp_http = HTTPRequest.new()
 	add_child(temp_http)
@@ -104,7 +120,8 @@ func cache_dialogue_audio(text: String):
 	var json_str = JSON.stringify(payload)
 	var headers = ["Content-Type: application/json"]
 	
-	print("[TRACE] [TTSInterface] Background caching started for text hash: ", clean_text.hash(), " (len: ", clean_text.length(), ")")
+	active_cache_requests += 1
+	print("[TRACE] [TTSInterface] Background caching started for text hash: ", clean_text.hash(), " (len: ", clean_text.length(), "), active: ", active_cache_requests)
 	
 	temp_http.request_completed.connect(func(result, response_code, headers, body):
 		temp_http.queue_free()
@@ -117,11 +134,21 @@ func cache_dialogue_audio(text: String):
 				print("[TTSInterface] Background cache parsing failed for text hash: ", clean_text.hash())
 		else:
 			print("[TTSInterface] Background cache request failed. Code: ", response_code)
+			
+		active_cache_requests -= 1
+		print("[TRACE] [TTSInterface] Active cache requests left: ", active_cache_requests)
+		if active_cache_requests <= 0:
+			active_cache_requests = 0
+			cache_queue_completed.emit()
 	)
 	
 	var err = temp_http.request(TTS_URL, headers, HTTPClient.METHOD_POST, json_str)
 	if err != OK:
 		temp_http.queue_free()
+		active_cache_requests -= 1
+		if active_cache_requests <= 0:
+			active_cache_requests = 0
+			cache_queue_completed.emit()
 
 func _clean_dialogue_text(text: String) -> String:
 	# Strip off the "--- Contract Details ---" block or other metadata to only speak narrative
@@ -211,24 +238,51 @@ func load_wav_from_buffer(bytes: PackedByteArray) -> AudioStreamWAV:
 		
 	return stream
 
-func _check_and_start_tts_server():
+func _discover_and_verify_tts():
+	tts_connection_attempts += 1
+	tts_connection_attempt.emit(tts_connection_attempts)
+	print("[TRACE] [TTSInterface] Verifying TTS server connection (attempt %d)..." % tts_connection_attempts)
+	
 	var check_http = HTTPRequest.new()
 	add_child(check_http)
-	check_http.timeout = 1.0 # 1 second timeout
+	check_http.timeout = 2.0
 	check_http.request_completed.connect(func(result, response_code, headers, body):
 		check_http.queue_free()
-		if result != HTTPRequest.RESULT_SUCCESS:
-			print("[TTSInterface] Local TTS server not detected on port 5000. Launching it...")
-			_launch_tts_server_process()
+		var success = false
+		if result == HTTPRequest.RESULT_SUCCESS and response_code == 200:
+			var json = JSON.new()
+			if json.parse(body.get_string_from_utf8()) == OK:
+				var data = json.get_data()
+				if data is Dictionary and data.get("status") == "ok" and data.get("pipeline_ready") == true:
+					success = true
+					
+		if success:
+			print("[TRACE] [TTSInterface] TTS server successfully verified and pipeline is ready.")
+			tts_connected = true
+			tts_connection_established.emit()
+			
+			# Process queued cache requests
+			var queue_copy = cache_queue.duplicate()
+			cache_queue.clear()
+			for text in queue_copy:
+				cache_dialogue_audio(text)
 		else:
-			print("[TTSInterface] Local TTS server is already running on port 5000.")
+			# If first attempt failed, start the server process
+			if tts_connection_attempts == 1:
+				print("[TTSInterface] Local TTS server not detected or not ready. Launching it...")
+				_launch_tts_server_process()
+				
+			# Retry after 1.5 seconds
+			get_tree().create_timer(1.5).timeout.connect(_discover_and_verify_tts)
 	)
 	
-	# Send a check request to the TTS server
-	var err = check_http.request(TTS_URL, ["Content-Type: application/json"], HTTPClient.METHOD_POST, "{}")
+	var err = check_http.request("http://127.0.0.1:5000/health")
 	if err != OK:
 		check_http.queue_free()
-		_launch_tts_server_process()
+		print("[TTSInterface] Failed to check health endpoint. Retrying in 1.5s...")
+		if tts_connection_attempts == 1:
+			_launch_tts_server_process()
+		get_tree().create_timer(1.5).timeout.connect(_discover_and_verify_tts)
 
 func _launch_tts_server_process():
 	var global_script_path = ProjectSettings.globalize_path("res://scripts/tts_server.py")

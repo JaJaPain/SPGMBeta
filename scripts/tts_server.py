@@ -15,6 +15,10 @@ except Exception as e:
     print("[TTS Server] Error initializing pipeline: ", e)
     pipeline = None
 
+@app.get("/health")
+async def health_check():
+    return {"status": "ok", "pipeline_ready": pipeline is not None}
+
 @app.post("/tts")
 async def text_to_speech(data: dict):
     if pipeline is None:

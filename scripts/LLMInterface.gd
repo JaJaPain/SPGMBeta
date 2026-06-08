@@ -1,6 +1,6 @@
 extends Node
 
-const OLLAMA_URL = "http://localhost:11434/api/generate"
+const OLLAMA_URL = "http://127.0.0.1:11434/api/generate"
 const MODEL_NAME = "qwen2.5:1.5b-instruct-q4_K_M"
 const TIMEOUT_SECONDS = 15.0
 
@@ -10,6 +10,13 @@ var is_waiting: bool = false
 var request_start_time: float = 0.0
 var last_history_text: String = ""
 var active_model_name: String = MODEL_NAME
+
+signal model_discovered(model_name: String)
+signal llm_connection_attempt(attempt: int)
+signal llm_connection_established(model_name: String)
+
+var llm_connected: bool = false
+var connection_attempts: int = 0
 
 # Politically neutral, profit-driven fallback templates
 var fallback_templates = [
@@ -249,11 +256,16 @@ func _ready():
 	_discover_ollama_model()
 
 func _discover_ollama_model():
+	connection_attempts += 1
+	llm_connection_attempt.emit(connection_attempts)
+	print("[TRACE] [LLMInterface] Discovering Ollama models (attempt %d)..." % connection_attempts)
+	
 	var tags_http = HTTPRequest.new()
 	add_child(tags_http)
 	tags_http.timeout = 2.0
 	tags_http.request_completed.connect(func(result, response_code, headers, body):
 		tags_http.queue_free()
+		var success = false
 		if result == HTTPRequest.RESULT_SUCCESS and response_code == 200:
 			var json = JSON.new()
 			if json.parse(body.get_string_from_utf8()) == OK:
@@ -300,12 +312,24 @@ func _discover_ollama_model():
 						print("[TRACE] [LLMInterface] Dynamic Ollama model selection: USING '", active_model_name, "'")
 					else:
 						print("[LLMInterface] No models found in Ollama tags. Defaulting to: ", active_model_name)
+					
+					success = true
+					
+		if success:
+			print("[TRACE] [LLMInterface] Ollama connection successfully verified.")
+			llm_connected = true
+			llm_connection_established.emit(active_model_name)
+			model_discovered.emit(active_model_name)
+		else:
+			print("[LLMInterface] Connection to Ollama failed (attempt %d). Retrying in 1.5s..." % connection_attempts)
+			get_tree().create_timer(1.5).timeout.connect(_discover_ollama_model)
 	)
 	
-	var err = tags_http.request("http://localhost:11434/api/tags")
+	var err = tags_http.request("http://127.0.0.1:11434/api/tags")
 	if err != OK:
 		tags_http.queue_free()
-		print("[LLMInterface] Failed to check Ollama tags endpoint. Defaulting to: ", active_model_name)
+		print("[LLMInterface] Failed to initiate tags check. Retrying in 1.5s...")
+		get_tree().create_timer(1.5).timeout.connect(_discover_ollama_model)
 
 func request_quest_generation(agent_faction: String, history_text: String, player_credits: int, player_reps: Dictionary, callback: Callable):
 	if is_waiting:
