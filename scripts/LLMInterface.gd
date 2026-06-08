@@ -2,12 +2,13 @@ extends Node
 
 const OLLAMA_URL = "http://localhost:11434/api/generate"
 const MODEL_NAME = "qwen2.5:1.5b-instruct-q4_K_M"
-const TIMEOUT_SECONDS = 3.0
+const TIMEOUT_SECONDS = 15.0
 
 var http_request: HTTPRequest
 var active_callback: Callable
 var is_waiting: bool = false
 var request_start_time: float = 0.0
+var last_history_text: String = ""
 
 # Politically neutral, profit-driven fallback templates
 var fallback_templates = [
@@ -238,6 +239,7 @@ var active_fetches = {
 }
 
 func _ready():
+	randomize()
 	http_request = HTTPRequest.new()
 	add_child(http_request)
 	http_request.timeout = TIMEOUT_SECONDS
@@ -249,6 +251,7 @@ func request_quest_generation(agent_faction: String, history_text: String, playe
 	
 	active_callback = callback
 	is_waiting = true
+	last_history_text = history_text
 	request_start_time = Time.get_ticks_msec()
 	print("[TRACE] [LLMInterface] request_quest_generation initiated at: %d ms" % request_start_time)
 	
@@ -320,7 +323,11 @@ func request_quest_generation(agent_faction: String, history_text: String, playe
 		"model": MODEL_NAME,
 		"prompt": system_prompt,
 		"stream": false,
-		"format": "json"
+		"format": "json",
+		"options": {
+			"temperature": 0.85,
+			"seed": randi()
+		}
 	}
 	
 	var json_str = JSON.stringify(payload)
@@ -387,7 +394,20 @@ func _on_request_completed(result: int, response_code: int, headers: PackedStrin
 func _trigger_fallback():
 	var elapsed = (Time.get_ticks_msec() - request_start_time) / 1000.0
 	print("[TRACE] [LLMInterface] Triggering local procedural fallback quest (Ollama elapsed: %.3fs)." % elapsed)
-	var idx = randi() % fallback_templates.size()
+	
+	# Try to pick a fallback template that hasn't been completed/abandoned recently
+	var available_indices = []
+	for i in range(fallback_templates.size()):
+		var template = fallback_templates[i]
+		if last_history_text == "" or last_history_text.find(template["title"]) == -1:
+			available_indices.append(i)
+			
+	var idx = 0
+	if available_indices.size() > 0:
+		idx = available_indices[randi() % available_indices.size()]
+	else:
+		idx = randi() % fallback_templates.size()
+		
 	var selected_quest = fallback_templates[idx].duplicate(true)
 	
 	# Randomize values slightly to make it feel procedural
@@ -452,12 +472,16 @@ func fetch_chatter_background(type: String):
 		"model": MODEL_NAME,
 		"prompt": system_prompt,
 		"stream": false,
-		"format": "json"
+		"format": "json",
+		"options": {
+			"temperature": 0.85,
+			"seed": randi()
+		}
 	}
 	
 	var temp_http = HTTPRequest.new()
 	add_child(temp_http)
-	temp_http.timeout = 5.0 # Give background request plenty of time
+	temp_http.timeout = 12.0 # Give background request plenty of time
 	
 	temp_http.request_completed.connect(func(result, response_code, headers, body):
 		active_fetches[type] = false
@@ -533,7 +557,7 @@ var fallback_salvager_backstories = [
 func fetch_salvager_profile(callback: Callable):
 	var temp_http = HTTPRequest.new()
 	add_child(temp_http)
-	temp_http.timeout = 4.0
+	temp_http.timeout = 10.0
 	
 	temp_http.request_completed.connect(func(result, response_code, headers, body):
 		temp_http.queue_free()
@@ -591,7 +615,11 @@ func fetch_salvager_profile(callback: Callable):
 		"model": MODEL_NAME,
 		"prompt": prompt,
 		"stream": false,
-		"format": "json"
+		"format": "json",
+		"options": {
+			"temperature": 0.85,
+			"seed": randi()
+		}
 	}
 	
 	var json_str = JSON.stringify(payload)
