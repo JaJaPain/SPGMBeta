@@ -109,14 +109,22 @@ func spawn_mission_targets(faction_name: String, count: int):
 		print("[GlobalState] ERROR: Could not load npc_ship.tscn for mission targets.")
 		return
 	
-	print("[GlobalState] Spawning ", count, " mission targets for faction: ", faction_name)
+	# Use the station as the spawn anchor so targets appear in open space,
+	# not on top of the dock where the player accepted the quest
+	var spawn_anchor: Vector3 = player_node.global_position
+	var station_node = current_scene.get_node_or_null("Station")
+	if station_node and is_instance_valid(station_node):
+		spawn_anchor = station_node.global_position
 	
-	# Spawn ships spread around the player at 120-200m so they don't pile up
+	print("[GlobalState] Spawning ", count, " mission targets for faction: ", faction_name, " at distance from station")
+	
+	# Spread ships evenly in a ring 550-900m from the station — far enough
+	# that the player has to fly out to engage, close enough to feel immediate
 	for i in range(count):
-		var angle = (TAU / count) * i + randf_range(-0.3, 0.3)
-		var dist = randf_range(120.0, 200.0)
-		var offset = Vector3(cos(angle), randf_range(-0.1, 0.1), sin(angle)) * dist
-		var spawn_pos = player_node.global_position + offset
+		var angle = (TAU / count) * i + randf_range(-0.4, 0.4)
+		var dist = randf_range(550.0, 900.0)
+		var offset = Vector3(cos(angle), randf_range(-0.05, 0.05), sin(angle)) * dist
+		var spawn_pos = spawn_anchor + offset
 		
 		var npc = npc_scene.instantiate()
 		npc.faction = faction_name
@@ -129,7 +137,8 @@ func spawn_mission_targets(faction_name: String, count: int):
 	var ui = current_scene.get_node_or_null("CanvasLayer/UIManager")
 	if ui and ui.has_method("show_hud_warning"):
 		ui.show_hud_warning("CONTRACT ACTIVE: " + str(count) + " " + faction_name.to_upper() + " targets have entered the sector.")
-	emit_chatter("SYSTEM", "Sensor sweep: " + str(count) + " " + faction_name.to_upper() + " signatures detected nearby.", Color(0.0, 0.9, 0.9))
+	emit_chatter("SYSTEM", "Sensor sweep: " + str(count) + " " + faction_name.to_upper() + " signatures detected in open space.", Color(0.0, 0.9, 0.9))
+
 
 
 
