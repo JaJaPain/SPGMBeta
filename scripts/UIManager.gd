@@ -807,10 +807,8 @@ func _create_pause_menu():
 	
 	var restart_btn = Button.new()
 	restart_btn.text = "Restart Game"
-	restart_btn.pressed.connect(func():
-		GlobalState.paused = false
-		get_tree().reload_current_scene()
-	)
+	restart_btn.pressed.connect(_restart_game)
+
 	vbox.add_child(restart_btn)
 	
 	var quit_btn = Button.new()
@@ -972,10 +970,8 @@ func _create_death_screen():
 	restart_btn.text = "Restart Game"
 	restart_btn.custom_minimum_size = Vector2(220, 0)
 	restart_btn.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	restart_btn.pressed.connect(func():
-		GlobalState.paused = false
-		get_tree().reload_current_scene()
-	)
+	restart_btn.pressed.connect(_restart_game)
+
 	vbox.add_child(restart_btn)
 	
 	var gap = Control.new()
@@ -991,11 +987,20 @@ func _create_death_screen():
 	
 	death_panel.visible = false
 
+func _restart_game():
+	# Reset all autoload state BEFORE reloading — prevents dangling callbacks
+	# (e.g. LLMInterface firing into a freed UIManager) from crashing the new session
+	LLMInterface.reset_for_restart()
+	QuestManager.reset_for_restart()
+	GlobalState.reset_for_restart()
+	get_tree().reload_current_scene()
+
 func _unhandled_input(event: InputEvent):
 	if event.is_action_pressed("pause_game"):
 		if loading_panel and is_instance_valid(loading_panel):
 			return
 		GlobalState.paused = not GlobalState.paused
+
 
 # Overview list population
 func update_overview_list(entities: Array):

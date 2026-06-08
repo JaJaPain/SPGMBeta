@@ -272,6 +272,23 @@ func _ready():
 	
 	_discover_ollama_model()
 
+func reset_for_restart():
+	# Clear the active callback FIRST — this is the one that crashes if it fires
+	# into a freed UIManager node after reload_current_scene()
+	active_callback = Callable()
+	is_waiting = false
+	# Cancel any in-flight main request so the old response is ignored on arrival
+	if http_request and is_instance_valid(http_request):
+		http_request.cancel_request()
+	# Clear chatter caches — new session should generate fresh contextual lines
+	for key in chatter_cache:
+		chatter_cache[key].clear()
+	for key in active_fetches:
+		active_fetches[key] = false
+	print("[LLMInterface] State reset for new game.")
+
+
+
 func _discover_ollama_model():
 	connection_attempts += 1
 	llm_connection_attempt.emit(connection_attempts)

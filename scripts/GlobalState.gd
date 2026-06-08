@@ -156,6 +156,31 @@ func _ready():
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	_setup_inputs()
 
+# Called before reload_current_scene() to avoid dangling references into the freed scene.
+func reset_for_restart():
+	# Null out all node references first
+	player = null
+	active_system_entities.clear()
+	# Directly set paused to avoid emitting game_paused into freed UIManager
+	paused = false
+	# Silently clear active_target without emitting target_changed
+	active_target = null
+	# Reset gameplay stats
+	player_credits = 50
+	cargo = 0.0
+	cargo_max = 100.0
+	mining_yield = 2.0
+	damage = 5.0
+	speed_mult = 1.0
+	laser_range = 80.0
+	destroyed_ships_pool = 0
+	# Reset reputations
+	reputations = { "zenith": 50.0, "aurelia": -20.0, "vanguard": -20.0 }
+	# Reset kill tracking
+	faction_kills = { "zenith": 0, "aurelia": 0, "vanguard": 0 }
+	print("[GlobalState] State reset for new game.")
+
+
 func _setup_inputs():
 	# Define EVE-like override autopilot keys
 	_add_key_action("override_approach", KEY_Q)

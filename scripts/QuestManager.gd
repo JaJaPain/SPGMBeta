@@ -16,6 +16,11 @@ func _ready():
 	# Connect to ship destroyed signals to track combat quests
 	GlobalState.ship_destroyed.connect(_on_ship_destroyed)
 
+func reset_for_restart():
+	active_quest = {}
+	print("[QuestManager] State reset for new game.")
+
+
 func _load_quest_history() -> String:
 	if not FileAccess.file_exists(HISTORY_FILE_PATH):
 		var f = FileAccess.open(HISTORY_FILE_PATH, FileAccess.WRITE)
