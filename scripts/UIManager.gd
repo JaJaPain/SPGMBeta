@@ -805,6 +805,14 @@ func _create_pause_menu():
 	resume_btn.pressed.connect(func(): GlobalState.paused = false)
 	vbox.add_child(resume_btn)
 	
+	var restart_btn = Button.new()
+	restart_btn.text = "Restart Game"
+	restart_btn.pressed.connect(func():
+		GlobalState.paused = false
+		get_tree().reload_current_scene()
+	)
+	vbox.add_child(restart_btn)
+	
 	var quit_btn = Button.new()
 	quit_btn.text = "Quit Game"
 	quit_btn.pressed.connect(func(): get_tree().quit())
@@ -943,9 +951,43 @@ func _create_death_screen():
 	vbox.alignment = BoxContainer.ALIGNMENT_CENTER
 	
 	var msg = Label.new()
-	msg.text = "SHIP DESTROYED\nPress ESC to Quit"
+	msg.text = "SHIP DESTROYED"
 	msg.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	msg.add_theme_font_size_override("font_size", 36)
+	msg.add_theme_color_override("font_color", Color(0.9, 0.15, 0.15))
 	vbox.add_child(msg)
+	
+	var sub = Label.new()
+	sub.text = "Your ship has been reduced to wreckage."
+	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	sub.add_theme_font_size_override("font_size", 14)
+	sub.modulate = Color(0.7, 0.7, 0.7)
+	vbox.add_child(sub)
+	
+	var btn_spacer = Control.new()
+	btn_spacer.custom_minimum_size = Vector2(0, 30)
+	vbox.add_child(btn_spacer)
+	
+	var restart_btn = Button.new()
+	restart_btn.text = "Restart Game"
+	restart_btn.custom_minimum_size = Vector2(220, 0)
+	restart_btn.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	restart_btn.pressed.connect(func():
+		GlobalState.paused = false
+		get_tree().reload_current_scene()
+	)
+	vbox.add_child(restart_btn)
+	
+	var gap = Control.new()
+	gap.custom_minimum_size = Vector2(0, 10)
+	vbox.add_child(gap)
+	
+	var quit_btn = Button.new()
+	quit_btn.text = "Quit Game"
+	quit_btn.custom_minimum_size = Vector2(220, 0)
+	quit_btn.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	quit_btn.pressed.connect(func(): get_tree().quit())
+	vbox.add_child(quit_btn)
 	
 	death_panel.visible = false
 
