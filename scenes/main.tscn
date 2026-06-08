@@ -98,3 +98,4 @@ transform = Transform3D(5, 0, 0, 0, 5, 0, 0, 0, 5, -850, 0, -1050)
 display_name = "KOVA STATION"
 station_type = "outpost"
 model_path = "res://assets/space_station2.glb"
+model_instance_scale = 4.0
