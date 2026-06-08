@@ -4,6 +4,10 @@ var bgm_player: AudioStreamPlayer
 var sfx_players: Array[AudioStreamPlayer] = []
 var max_sfx_channels: int = 8
 
+var music_volume_percent: float = 0.5
+var sfx_volume_percent: float = 1.0
+var is_ducked: bool = false
+
 # Audio Streams
 var bgm_track1 = preload("res://sound/BackgroundMusic/Iron Lullaby1.mp3")
 var bgm_track2 = preload("res://sound/BackgroundMusic/Iron Lullaby2.mp3")
@@ -115,32 +119,47 @@ func play_cargo_full():
 	play_sfx(sfx_cargo_full, 0.0)
 
 func set_music_volume(value: float):
-	var idx = AudioServer.get_bus_index("Music")
-	if idx != -1:
-		AudioServer.set_bus_volume_db(idx, linear_to_db(value))
-		AudioServer.set_bus_mute(idx, value <= 0.0001)
+	music_volume_percent = value
+	_update_bus_volumes()
 
 func get_music_volume() -> float:
-	var idx = AudioServer.get_bus_index("Music")
-	if idx != -1:
-		if AudioServer.is_bus_mute(idx):
-			return 0.0
-		return db_to_linear(AudioServer.get_bus_volume_db(idx))
-	return 1.0
+	return music_volume_percent
 
 func set_sfx_volume(value: float):
-	var idx = AudioServer.get_bus_index("SFX")
-	if idx != -1:
-		AudioServer.set_bus_volume_db(idx, linear_to_db(value))
-		AudioServer.set_bus_mute(idx, value <= 0.0001)
+	sfx_volume_percent = value
+	_update_bus_volumes()
 
 func get_sfx_volume() -> float:
-	var idx = AudioServer.get_bus_index("SFX")
-	if idx != -1:
-		if AudioServer.is_bus_mute(idx):
-			return 0.0
-		return db_to_linear(AudioServer.get_bus_volume_db(idx))
-	return 1.0
+	return sfx_volume_percent
+
+func _update_bus_volumes():
+	var music_idx = AudioServer.get_bus_index("Music")
+	if music_idx != -1:
+		var target_db = linear_to_db(music_volume_percent)
+		if is_ducked:
+			target_db -= 18.0 # Duck music by 18dB
+		AudioServer.set_bus_volume_db(music_idx, target_db)
+		AudioServer.set_bus_mute(music_idx, music_volume_percent <= 0.0001)
+		
+	var sfx_idx = AudioServer.get_bus_index("SFX")
+	if sfx_idx != -1:
+		var target_db = linear_to_db(sfx_volume_percent)
+		if is_ducked:
+			target_db -= 12.0 # Duck game sound by 12dB
+		AudioServer.set_bus_volume_db(sfx_idx, target_db)
+		AudioServer.set_bus_mute(sfx_idx, sfx_volume_percent <= 0.0001)
+
+func duck_audio():
+	if not is_ducked:
+		is_ducked = true
+		_update_bus_volumes()
+		print("[TRACE] [AudioManager] Audio ducked (Music -18dB, SFX -12dB)")
+
+func unduck_audio():
+	if is_ducked:
+		is_ducked = false
+		_update_bus_volumes()
+		print("[TRACE] [AudioManager] Audio unducked")
 
 func play_align():
 	if sfx_align == null:

@@ -18,7 +18,7 @@ signal tts_connection_established()
 
 var tts_connected: bool = false
 var tts_connection_attempts: int = 0
-var cache_queue: Array[String] = []
+var cache_queue: Array = []
 
 func start_interaction(interaction_name: String):
 	last_interaction_time = Time.get_ticks_msec()
@@ -29,22 +29,30 @@ func start_interaction(interaction_name: String):
 func _ready():
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	
+	# Ensure dedicated Voice bus exists in AudioServer and routes to Master
+	var voice_bus_idx = AudioServer.get_bus_index("Voice")
+	if voice_bus_idx == -1:
+		AudioServer.add_bus()
+		voice_bus_idx = AudioServer.get_bus_count() - 1
+		AudioServer.set_bus_name(voice_bus_idx, "Voice")
+	
 	http_request = HTTPRequest.new()
 	add_child(http_request)
 	http_request.timeout = 10.0
 	http_request.request_completed.connect(_on_request_completed)
 	
 	audio_player = AudioStreamPlayer.new()
-	audio_player.bus = "SFX"
+	audio_player.bus = "Voice"
 	add_child(audio_player)
+	audio_player.finished.connect(_on_audio_player_finished)
 	
 	_discover_and_verify_tts()
 	
 	# Pre-cache static completion and abandon messages
-	cache_dialogue_audio("Pleasure doing business with you, pilot. Payout transferred and brokerage fee deducted. Check back soon.")
-	cache_dialogue_audio("Contract dumped? You're costing me credit margins. I don't forget when people waste my time.")
+	cache_dialogue_audio("Pleasure doing business with you, pilot. Payout transferred and brokerage fee deducted. Check back soon.", "neutral")
+	cache_dialogue_audio("Contract dumped? You're costing me credit margins. I don't forget when people waste my time.", "neutral")
 
-func play_dialogue_audio(text: String):
+func play_dialogue_audio(text: String, faction: String = "neutral"):
 	tts_request_time = Time.get_ticks_msec()
 	
 	if is_requesting:
@@ -53,10 +61,11 @@ func play_dialogue_audio(text: String):
 		
 	if audio_player.playing:
 		audio_player.stop()
+		AudioManager.unduck_audio()
 		
 	text = text.strip_edges()
 	# Clean up meta headers, details, options or empty spaces to avoid reading formatting
-	var clean_text = _clean_dialogue_text(text)
+	var clean_text = clean_dialogue_text(text)
 	if clean_text == "":
 		print("[TRACE] [TTSInterface] Cleaned text is empty, skipping speech.")
 		return
@@ -70,6 +79,7 @@ func play_dialogue_audio(text: String):
 		var stream = tts_audio_cache[clean_text]
 		audio_player.stream = stream
 		audio_player.play()
+		AudioManager.duck_audio() # Duck background audio
 		var play_now = Time.get_ticks_msec()
 		var total_elapsed_str = ""
 		if last_interaction_time > 0.0:
@@ -80,30 +90,36 @@ func play_dialogue_audio(text: String):
 	print("[TRACE] [TTSInterface] play_dialogue_audio CACHE MISS at: %d ms%s" % [tts_request_time, elapsed_str])
 	
 	is_requesting = true
+	var voice_name = get_voice_for_faction(faction)
 	var payload = {
 		"text": clean_text,
-		"voice": "af_bella",
+		"voice": voice_name,
 		"speed": 1.0
 	}
 	var json_str = JSON.stringify(payload)
 	var headers = ["Content-Type: application/json"]
 	
 	# Print statement to help debugging in console
-	print("[TTSInterface] Requesting speech for: ", clean_text)
+	print("[TTSInterface] Requesting speech for: ", clean_text, " using voice: ", voice_name)
 	var err = http_request.request(TTS_URL, headers, HTTPClient.METHOD_POST, json_str)
 	if err != OK:
 		print("[TTSInterface] Failed to initiate HTTP request. Error code: ", err)
 		is_requesting = false
 
-func cache_dialogue_audio(text: String):
+func cache_dialogue_audio(text: String, faction: String = "neutral"):
 	text = text.strip_edges()
-	var clean_text = _clean_dialogue_text(text)
+	var clean_text = clean_dialogue_text(text)
 	if clean_text == "" or tts_audio_cache.has(clean_text):
 		return
 		
 	if not tts_connected:
-		if not cache_queue.has(clean_text):
-			cache_queue.append(clean_text)
+		var already_queued = false
+		for item in cache_queue:
+			if item.text == clean_text:
+				already_queued = true
+				break
+		if not already_queued:
+			cache_queue.append({"text": clean_text, "faction": faction})
 			print("[TRACE] [TTSInterface] Queueing cache request (TTS not connected): ", clean_text.hash())
 		return
 		
@@ -112,16 +128,17 @@ func cache_dialogue_audio(text: String):
 	add_child(temp_http)
 	temp_http.timeout = 15.0
 	
+	var voice_name = get_voice_for_faction(faction)
 	var payload = {
 		"text": clean_text,
-		"voice": "af_bella",
+		"voice": voice_name,
 		"speed": 1.0
 	}
 	var json_str = JSON.stringify(payload)
 	var headers = ["Content-Type: application/json"]
 	
 	active_cache_requests += 1
-	print("[TRACE] [TTSInterface] Background caching started for text hash: ", clean_text.hash(), " (len: ", clean_text.length(), "), active: ", active_cache_requests)
+	print("[TRACE] [TTSInterface] Background caching started for text hash: ", clean_text.hash(), " (len: ", clean_text.length(), "), active: ", active_cache_requests, " using voice: ", voice_name)
 	
 	temp_http.request_completed.connect(func(result, response_code, headers, body):
 		temp_http.queue_free()
@@ -150,7 +167,7 @@ func cache_dialogue_audio(text: String):
 			active_cache_requests = 0
 			cache_queue_completed.emit()
 
-func _clean_dialogue_text(text: String) -> String:
+func clean_dialogue_text(text: String) -> String:
 	# Strip off the "--- Contract Details ---" block or other metadata to only speak narrative
 	var details_idx = text.find("--- Contract Details ---")
 	if details_idx != -1:
@@ -158,6 +175,28 @@ func _clean_dialogue_text(text: String) -> String:
 	
 	# Strip off offline backup notes
 	text = text.replace(" [Offline Backup]", "")
+	
+	# Strip voice direction stage cues in parentheses e.g. (spoken softly), (with tension)
+	var regex_paren = RegEx.new()
+	regex_paren.compile("\\([^)]*\\)")
+	text = regex_paren.sub(text, "", true)
+	
+	# Strip bracketed cues e.g. [sighs], [pause], [static] — but only for broker dialogue
+	# (radio chatter uses [static] intentionally so this only runs on dialogue paths)
+	var regex_bracket = RegEx.new()
+	regex_bracket.compile("\\[[^\\]]*\\]")
+	text = regex_bracket.sub(text, "", true)
+	
+	# Strip asterisk emphasis e.g. *sighs*, *leans forward*
+	var regex_asterisk = RegEx.new()
+	regex_asterisk.compile("\\*[^*]*\\*")
+	text = regex_asterisk.sub(text, "", true)
+	
+	# Collapse multiple spaces left behind
+	var regex_spaces = RegEx.new()
+	regex_spaces.compile(" {2,}")
+	text = regex_spaces.sub(text, " ", true)
+	
 	return text.strip_edges()
 
 func _on_request_completed(result: int, response_code: int, headers: PackedStringArray, body: PackedByteArray):
@@ -181,6 +220,7 @@ func _on_request_completed(result: int, response_code: int, headers: PackedStrin
 	if stream:
 		audio_player.stream = stream
 		audio_player.play()
+		AudioManager.duck_audio() # Duck background audio
 		var play_now = Time.get_ticks_msec()
 		var total_elapsed_str = ""
 		if last_interaction_time > 0.0:
@@ -264,8 +304,8 @@ func _discover_and_verify_tts():
 			# Process queued cache requests
 			var queue_copy = cache_queue.duplicate()
 			cache_queue.clear()
-			for text in queue_copy:
-				cache_dialogue_audio(text)
+			for item in queue_copy:
+				cache_dialogue_audio(item.text, item.faction)
 		else:
 			# If first attempt failed, start the server process
 			if tts_connection_attempts == 1:
@@ -293,3 +333,17 @@ func _launch_tts_server_process():
 		print("[TTSInterface] Successfully launched local TTS server background process (PID: ", pid, ")")
 	else:
 		print("[TTSInterface] Failed to launch local TTS server. Please ensure Python is installed and in PATH.")
+
+func get_voice_for_faction(faction: String) -> String:
+	match faction.to_lower():
+		"zenith":
+			return "am_adam"
+		"aurelia":
+			return "af_sarah"
+		"vanguard":
+			return "am_michael"
+		"neutral", _:
+			return "af_bella"
+
+func _on_audio_player_finished():
+	AudioManager.unduck_audio()

@@ -94,6 +94,12 @@ func accept_quest(quest_data: Dictionary, selected_choice: Dictionary):
 		active_quest["target_faction"] = obj_data.get("target_faction", "zenith")
 		active_quest["count_required"] = int(obj_data.get("count_required", 3) * combat_mult)
 		active_quest["current_count"] = 0
+		# Schedule mission target spawn for shortly after undock (3 seconds gives time to clear the station)
+		var spawn_faction = active_quest["target_faction"]
+		var spawn_count = active_quest["count_required"]
+		get_tree().create_timer(3.0).timeout.connect(func():
+			GlobalState.spawn_mission_targets(spawn_faction, spawn_count)
+		)
 	elif type == "DELIVER_ORE":
 		active_quest["amount_required"] = snapped(obj_data.get("amount_required", 20.0), 1.0)
 		

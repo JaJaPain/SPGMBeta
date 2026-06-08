@@ -62,6 +62,10 @@ var cached_quest_data: Dictionary = {}
 var cached_quest_is_fallback: bool = false
 var is_waiting_for_agent_board: bool = false
 
+# Dynamic Kaelen reaction lines — unique per quest, generated on acceptance
+var cached_completion_line: String = ""
+var cached_abandon_line: String = ""
+
 var loading_panel: Panel
 var loading_bar: ProgressBar
 var loading_status_label: Label
@@ -1010,7 +1014,24 @@ func update_overview_list(entities: Array):
 			elif entity.is_in_group("station"):
 				type_str = "Space Station"
 			elif entity.is_in_group("ship"):
-				type_str = "NPC Ship (" + entity.get("faction").to_upper() + ")"
+				var ship_name_upper = entity.name.to_upper()
+				var faction_str = entity.get("faction")
+				var faction_upper = faction_str.to_upper() if faction_str else ""
+				# Derive ship class from its name — already contains Patrol/Raider/Sentinel etc.
+				if "PATROL" in ship_name_upper:
+					type_str = faction_upper.capitalize() + " Patrol"
+				elif "RAIDER" in ship_name_upper:
+					type_str = faction_upper.capitalize() + " Raider"
+				elif "SENTINEL" in ship_name_upper:
+					type_str = faction_upper.capitalize() + " Sentinel"
+				elif "HAULER" in ship_name_upper or "SALVAGER" in ship_name_upper:
+					type_str = "Independent Hauler"
+				elif "INTERCEPTOR" in ship_name_upper:
+					type_str = faction_upper.capitalize() + " Interceptor"
+				elif "GUNSHIP" in ship_name_upper:
+					type_str = faction_upper.capitalize() + " Gunship"
+				else:
+					type_str = faction_upper.capitalize() + " Combat Vessel"
 			elif entity.is_in_group("wreckage"):
 				type_str = "Wreckage"
 			
@@ -1700,14 +1721,14 @@ func _on_background_quest_generated(quest_data: Dictionary, is_fallback: bool):
 		# Pre-cache main briefing TTS
 		var dialogue = quest_data.get("dialogue", "")
 		if dialogue != "":
-			TTSInterface.cache_dialogue_audio(dialogue)
+			TTSInterface.cache_dialogue_audio(dialogue, quest_data.get("faction", "neutral"))
 			
 		# Pre-cache choice response TTS
 		var choices = quest_data.get("choices", [])
 		for choice in choices:
 			var response = choice.get("consequence", {}).get("dialogue_response", "")
 			if response != "":
-				TTSInterface.cache_dialogue_audio(response)
+				TTSInterface.cache_dialogue_audio(response, quest_data.get("faction", "neutral"))
 				
 	# If the user is waiting on the agent menu board, refresh it immediately
 	if is_waiting_for_agent_board:
@@ -1739,15 +1760,17 @@ func _on_quest_generated_received(quest_data: Dictionary, is_fallback: bool):
 		agent_dialogue_label.text = "No contracts available right now. Check back later."
 		return
 		
+	var raw_dialogue = quest_data.get("dialogue", "")
+	var display_dialogue = TTSInterface.clean_dialogue_text(raw_dialogue)
 	var note = " [Offline Backup]" if is_fallback else ""
-	agent_dialogue_label.text = quest_data.get("dialogue", "") + note
+	agent_dialogue_label.text = display_dialogue + note
 	agent_name_label.text = quest_data.get("agent_name", "Broker Kaelen").to_upper()
 	
 	# Update portrait and logo
 	_update_agent_portrait(quest_data.get("faction", "neutral"))
 	
 	# Play briefing voice audio
-	TTSInterface.play_dialogue_audio(quest_data.get("dialogue", ""))
+	TTSInterface.play_dialogue_audio(quest_data.get("dialogue", ""), quest_data.get("faction", "neutral"))
 	
 	# Append client faction details
 	var f_client = quest_data.get("faction", "neutral").to_upper()
@@ -1787,10 +1810,16 @@ func _on_choice_selected(quest_data: Dictionary, choice: Dictionary):
 	QuestManager.accept_quest(quest_data, choice)
 	
 	var consequence = choice.get("consequence", {})
-	agent_dialogue_label.text = consequence.get("dialogue_response", "Contract confirmed. Get it done.")
+	var raw_response = consequence.get("dialogue_response", "")
+	var clean_response = TTSInterface.clean_dialogue_text(raw_response)
+	# Safety net: if cleaning stripped everything (entire string was stage direction), use a fallback
+	if clean_response.length() < 5:
+		clean_response = LLMInterface.fallback_completion_lines[randi() % LLMInterface.fallback_completion_lines.size()]
+		print("[TRACE] [UIManager] dialogue_response was empty after cleaning, using fallback.")
+	agent_dialogue_label.text = clean_response
 	
-	# Play choice response voice audio
-	TTSInterface.play_dialogue_audio(consequence.get("dialogue_response", "Contract confirmed. Get it done."))
+	# Play choice response voice audio (TTS also cleans internally)
+	TTSInterface.play_dialogue_audio(clean_response, quest_data.get("faction", "neutral"))
 	
 	agent_back_btn.visible = false
 	
@@ -1803,6 +1832,19 @@ func _on_choice_selected(quest_data: Dictionary, choice: Dictionary):
 	# Start pre-caching the NEXT quest immediately in the background
 	print("[TRACE] [UIManager] Quest accepted. Starting pre-caching of the next contract.")
 	QuestManager.request_new_quest("neutral", _on_background_quest_generated)
+	
+	# Generate unique Kaelen completion/abandon lines for THIS quest in the background
+	cached_completion_line = ""
+	cached_abandon_line = ""
+	print("[TRACE] [UIManager] Requesting unique Kaelen reaction lines for: ", quest_data.get("title", "quest"))
+	LLMInterface.request_kaelen_reaction(quest_data, func(comp_line: String, abn_line: String):
+		cached_completion_line = comp_line
+		cached_abandon_line = abn_line
+		print("[TRACE] [UIManager] Kaelen reactions ready. Caching TTS...")
+		# Pre-cache both in the background using neutral (Kaelen's) voice
+		TTSInterface.cache_dialogue_audio(comp_line, "neutral")
+		TTSInterface.cache_dialogue_audio(abn_line, "neutral")
+	)
 
 func _on_agent_back_pressed():
 	# Stop voice dialogue audio
@@ -1817,11 +1859,23 @@ func _on_agent_complete_pressed():
 	
 	for child in agent_choices_container.get_children():
 		child.queue_free()
-		
+	
 	QuestManager.complete_quest()
 	
-	agent_dialogue_label.text = "Pleasure doing business with you, pilot. Payout transferred and brokerage fee deducted. Check back soon."
-	TTSInterface.play_dialogue_audio(agent_dialogue_label.text)
+	# Switch to Kaelen's portrait — she's the one paying out, not the quest giver
+	agent_name_label.text = "BROKER KAELEN"
+	_update_agent_portrait("neutral")
+	
+	# Use the pre-generated contextual line, fall back to a random one if not ready
+	var completion_text = cached_completion_line
+	if completion_text == "":
+		completion_text = LLMInterface.fallback_completion_lines[randi() % LLMInterface.fallback_completion_lines.size()]
+		print("[TRACE] [UIManager] Kaelen completion line not ready, using random fallback.")
+	cached_completion_line = ""
+	cached_abandon_line = ""
+	
+	agent_dialogue_label.text = completion_text
+	TTSInterface.play_dialogue_audio(completion_text, "neutral")
 	agent_back_btn.visible = true
 	
 	# If for some reason the cache is empty, request one now
@@ -1836,11 +1890,23 @@ func _on_agent_abandon_pressed():
 	
 	for child in agent_choices_container.get_children():
 		child.queue_free()
-		
+	
 	QuestManager.abandon_quest()
 	
-	agent_dialogue_label.text = "Contract dumped? You're costing me credit margins. I don't forget when people waste my time."
-	TTSInterface.play_dialogue_audio(agent_dialogue_label.text)
+	# Switch to Kaelen's portrait — she's the one chewing you out, not the quest giver
+	agent_name_label.text = "BROKER KAELEN"
+	_update_agent_portrait("neutral")
+	
+	# Use the pre-generated contextual line, fall back to a random one if not ready
+	var abandon_text = cached_abandon_line
+	if abandon_text == "":
+		abandon_text = LLMInterface.fallback_abandon_lines[randi() % LLMInterface.fallback_abandon_lines.size()]
+		print("[TRACE] [UIManager] Kaelen abandon line not ready, using random fallback.")
+	cached_completion_line = ""
+	cached_abandon_line = ""
+	
+	agent_dialogue_label.text = abandon_text
+	TTSInterface.play_dialogue_audio(abandon_text, "neutral")
 	agent_back_btn.visible = true
 	
 	# If for some reason the cache is empty, request one now

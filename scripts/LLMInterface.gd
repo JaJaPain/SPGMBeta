@@ -246,6 +246,23 @@ var active_fetches = {
 	"industrial_banter": false
 }
 
+# Fallback Kaelen lines if LLM is offline or too slow
+var fallback_completion_lines = [
+	"Credits wired and brokerage fee deducted. Don't get comfortable, Shiny. There's always another contract.",
+	"Clean work. My client is satisfied, which means I'm satisfied. Payout transferred.",
+	"Done and dusted. That's how you earn a reputation in this sector, Shiny. Credits in your account.",
+	"Good. My margins are intact and your account is padded. We both win. Come back soon.",
+	"Contract fulfilled. You know, Shiny, you're starting to grow on me. Like a profitable parasite."
+]
+
+var fallback_abandon_lines = [
+	"Contract dumped. You're costing me credit margins, Shiny. I don't forget when people waste my time.",
+	"Walking away? My client is furious and frankly, so am I. Come back when you've found your nerve.",
+	"Abandoned. You know what that costs me in reputation? Considerably more than it costs you.",
+	"Fine. I'll find someone else who actually finishes what they start. This goes in your file, Shiny.",
+	"Contract voided. My brokerage fee is still owed. Consider that a lesson in commitment."
+]
+
 func _ready():
 	randomize()
 	http_request = HTTPRequest.new()
@@ -343,68 +360,161 @@ func request_quest_generation(agent_faction: String, history_text: String, playe
 	
 	var rand_comp = complications[randi() % complications.size()]
 	
-	# Assemble system prompt
-	var system_prompt = "You are an independent, politically neutral space broker and fixer named Broker Kaelen. " + \
-		"You operate out of a space station and negotiate contracts with all factions (Zenith, Aurelia, Vanguard). " + \
-		"You have no political affiliation. You act purely out of personal profit. You are proud of your greed and broker deals solely to make money. " + \
-		"Your tone is cynical, sharp, opportunistic, and business-focused. " + \
-		"You call the player 'Shiny' as a nickname in your briefings and dialogue responses (treating them like a fresh, unscarred greenhorn, but also a valuable polished tool that makes you credits).\n\n" + \
-		"Current player stats:\n" + \
+	# Pick a faction randomly if "neutral" is passed (neutral = broker picks any client)
+	var chosen_faction = agent_faction
+	if chosen_faction == "neutral" or chosen_faction == "":
+		var factions = ["zenith", "aurelia", "vanguard"]
+		chosen_faction = factions[randi() % factions.size()]
+	
+	# Each faction has a distinct named agent, personality, and player nickname
+	var agent_name = "Broker Kaelen"
+	var agent_persona = ""
+	var player_nickname = "Contractor"
+	var agent_role = ""
+	var example_dialogue = ""
+	var example_response_1 = ""
+	var example_response_2 = ""
+	var example_response_3 = ""
+	var example_faction_key = chosen_faction
+	
+	match chosen_faction:
+		"zenith":
+			agent_name = "Director Voss"
+			agent_role = "Zenith Corporate Acquisitions Director"
+			player_nickname = "Contractor"
+			agent_persona = "You are Director Voss, a cold, calculating Zenith corporate officer. " + \
+				"You speak in clipped, efficient sentences. You have no patience for failure and treat the pilot as an interchangeable asset. " + \
+				"You refer to the pilot exclusively as 'Contractor'. You never use slang or humor. " + \
+				"You frame all jobs as 'acquisitions', 'operations', or 'directives'. Zenith's interests are paramount."
+			example_dialogue = "Zenith has a resource deficit that requires immediate correction, Contractor. Deliver the required silicate tonnage to the station docking bay. Efficiency is non-negotiable."
+			example_response_1 = "Confirmed, Contractor. Your assignment is logged. Do not deviate from the directive."
+			example_response_2 = "An advance against operational expenses. Noted. Your compensation adjustment is processed. Expect elevated patrol resistance on your route."
+			example_response_3 = "Bold negotiation. Zenith respects leverage, Contractor. Payout is revised upward. However, security escalation protocols are now active in your sector."
+		"aurelia":
+			agent_name = "Liaison Ryn"
+			agent_role = "Aurelia Syndicate Trade Liaison"
+			player_nickname = "Ghost"
+			agent_persona = "You are Liaison Ryn, a smooth-talking, conniving Aurelia syndicate fixer. " + \
+				"You are charming but never fully trustworthy. You speak like someone always running an angle. " + \
+				"You refer to the pilot exclusively as 'Ghost'. You use words like 'clean', 'quiet', 'off the books'. " + \
+				"Everything is framed as an opportunity, never a risk."
+			example_dialogue = "Aurelia's got a clean job for someone with your skills, Ghost. Quiet, low profile. The syndicate needs those hulls cleared before the next shipment window. Easy credits, no records."
+			example_response_1 = "Smooth. Ghost keeps it clean, that's why I like working with you. Stay off their sensors."
+			example_response_2 = "An advance? Smart move, Ghost. Credits transferred. The Syndicate routes you through a riskier corridor to offset the cost. Stay quiet out there."
+			example_response_3 = "Playing hardball? I respect the hustle, Ghost. Payout bumped. But Aurelia's rivals will be watching the sector. Keep your profile low."
+		"vanguard":
+			agent_name = "Captain Dask"
+			agent_role = "Vanguard Military Contract Officer"
+			player_nickname = "Merc"
+			agent_persona = "You are Captain Dask, a gruff, no-nonsense Vanguard military contract officer. " + \
+				"You are direct and have zero tolerance for excuses or negotiation theatre. " + \
+				"You refer to the pilot exclusively as 'Merc'. You use military shorthand: 'ROE', 'boots on hull', 'clear the zone'. " + \
+				"You respect competence and despise weakness."
+			example_dialogue = "Vanguard needs those Aurelia raiders cleared from the shipping lane, Merc. Four contacts, high priority. Take them down and get back to the dock. No theatrics."
+			example_response_1 = "Copy that, Merc. ROE is clear: engage and eliminate. Don't make it complicated."
+			example_response_2 = "You want an advance, Merc? Fine. But Vanguard doesn't cover operational cowardice. Threat level is escalated. Don't embarrass us."
+			example_response_3 = "Renegotiating under fire, Merc. Bold. Payout is adjusted. Don't expect the Vanguard to soften the zone for you."
+		_:
+			agent_name = "Broker Kaelen"
+			agent_role = "Neutral Fixer & Profit Broker"
+			player_nickname = "Shiny"
+			agent_persona = "You are Broker Kaelen, an independent, politically neutral space broker and fixer. " + \
+				"You operate out of a space station and negotiate contracts with all factions for personal profit. " + \
+				"You are cynical, sharp, and opportunistic. You call the pilot 'Shiny' — treating them like an unscarred greenhorn who is also your most profitable tool. " + \
+				"You always mention your broker's cut and how the deal benefits you personally."
+			example_dialogue = "Zenith needs ore, I need my cut, and you need credits, Shiny. Bring me 25 cubic metres and I'll keep my brokerage fee reasonable. Don't dawdle."
+			example_response_1 = "Excellent, Shiny. My client is watching the clock, so don't waste my time."
+			example_response_2 = "Taking a bite out of my margins, Shiny? Fine. Credits wired. But I'm routing you through a contested lane to cover the difference."
+			example_response_3 = "Hustling a hustler? I respect the nerve, Shiny. Payout is bumped. But enemies will be expecting you."
+	
+	# Randomly pick which objective type to demonstrate in the example (50/50)
+	# so the LLM sees both formats equally and generates a mix
+	var example_obj_block = ""
+	var example_title = ""
+	var kill_target_constraint = ""
+	
+	if randi() % 2 == 0:
+		# Show a DELIVER_ORE example
+		example_title = "Silicate Run"
+		example_obj_block = \
+			"  \"objective\": {\n" + \
+			"    \"type\": \"DELIVER_ORE\",\n" + \
+			"    \"amount_required\": 25.0,\n" + \
+			"    \"reward_credits\": 160\n" + \
+			"  },"
+	else:
+		# Show a KILL_SHIPS example
+		var kill_targets = ["zenith", "aurelia", "vanguard"]
+		kill_targets.erase(chosen_faction)
+		var kill_target = kill_targets[randi() % kill_targets.size()]
+		example_title = "Clear the Lane"
+		example_obj_block = \
+			"  \"objective\": {\n" + \
+			"    \"type\": \"KILL_SHIPS\",\n" + \
+			"    \"target_faction\": \"" + kill_target + "\",\n" + \
+			"    \"count_required\": 3,\n" + \
+			"    \"reward_credits\": 200\n" + \
+			"  },"
+
+
+	var system_prompt = agent_persona + "\n\n" + \
+		"Current pilot stats:\n" + \
 		"- Credits: " + str(player_credits) + " SC\n" + \
 		"- Zenith reputation: " + str(player_reps.get("zenith", 50.0)) + "\n" + \
 		"- Aurelia reputation: " + str(player_reps.get("aurelia", -20.0)) + "\n" + \
 		"- Vanguard reputation: " + str(player_reps.get("vanguard", -20.0)) + "\n\n" + \
 		"### COMPLETED MISSION HISTORY:\n" + \
-		"You have worked with this pilot on the following contracts. You must reference these past achievements/failures naturally in your dialogue if the list is not empty:\n" + \
+		"Reference past contracts naturally in your dialogue if the list is not empty:\n" + \
 		history_text + "\n\n" + \
 		"### QUEST COMPLICATION:\n" + \
 		rand_comp + "\n\n" + \
-		"Generate a unique space quest. You MUST respond strictly in valid JSON format matching this schema exactly. Do not output any notes, markdown codeblock formatting, or surrounding text. Only output the raw JSON object:\n" + \
+		"Generate a unique space quest. You MUST respond strictly in valid JSON format. Do not output notes, markdown, or surrounding text. Only output the raw JSON object:\n" + \
 		"{\n" + \
-		"  \"title\": \"[A short, thematic quest name]\",\n" + \
-		"  \"faction\": \"[one of 'zenith', 'aurelia', 'vanguard' representing the client]\",\n" + \
-		"  \"agent_name\": \"Broker Kaelen\",\n" + \
-		"  \"dialogue\": \"[Agent's spoken briefing text. Mention your broker cut/margin and how this profits you personally. Reference the quest complication. Keep it under 120 words.]\",\n" + \
-		"  \"objective\": {\n" + \
-		"    \"type\": \"[Either 'KILL_SHIPS' or 'DELIVER_ORE']\",\n" + \
-		"    \"target_faction\": \"[Only if type is KILL_SHIPS: either 'aurelia', 'zenith', 'vanguard']\",\n" + \
-		"    \"count_required\": [Only if type is KILL_SHIPS: integer between 2 and 6],\n" + \
-		"    \"amount_required\": [Only if type is DELIVER_ORE: float between 15.0 and 40.0],\n" + \
-		"    \"reward_credits\": [integer reward between 100 and 300]\n" + \
-		"  },\n" + \
+		"  \"title\": \"" + example_title + "\",\n" + \
+		"  \"faction\": \"" + chosen_faction + "\",\n" + \
+		"  \"agent_name\": \"" + agent_name + "\",\n" + \
+		"  \"dialogue\": \"" + example_dialogue + "\",\n" + \
+		example_obj_block + "\n" + \
 		"  \"choices\": [\n" + \
 		"    {\n" + \
-		"      \"text\": \"[Player option 1: Professional acceptance]\",\n" + \
+		"      \"text\": \"I'll take the job.\",\n" + \
 		"      \"consequence\": {\n" + \
 		"        \"credits_immediate\": 0,\n" + \
-		"        \"reputation_change\": {\"[client_faction]\": 3},\n" + \
+		"        \"reputation_change\": {\"" + chosen_faction + "\": 3},\n" + \
 		"        \"combat_multiplier\": 1.0,\n" + \
 		"        \"reward_credits_multiplier\": 1.0,\n" + \
-		"        \"dialogue_response\": \"[Agent response if selected. E.g. 'Excellent. Wired to the feed, go get it done.']\"\n" + \
+		"        \"dialogue_response\": \"" + example_response_1 + "\"\n" + \
 		"      }\n" + \
 		"    },\n" + \
 		"    {\n" + \
-		"      \"text\": \"[Player option 2: Bold / demanding advance credits]\",\n" + \
+		"      \"text\": \"I need a credit advance first.\",\n" + \
 		"      \"consequence\": {\n" + \
 		"        \"credits_immediate\": 40,\n" + \
-		"        \"reputation_change\": {\"[client_faction]\": -2},\n" + \
+		"        \"reputation_change\": {\"" + chosen_faction + "\": -2},\n" + \
 		"        \"combat_multiplier\": 1.3,\n" + \
 		"        \"reward_credits_multiplier\": 1.2,\n" + \
-		"        \"dialogue_response\": \"[Agent response. Explain how you're routing them to a more dangerous area to cover the advance. E.g. 'Taking a bite out of my margins? Fine, credits wired. But the threat level is scaled up.']\"\n" + \
+		"        \"dialogue_response\": \"" + example_response_2 + "\"\n" + \
 		"      }\n" + \
 		"    },\n" + \
 		"    {\n" + \
-		"      \"text\": \"[Player option 3: Audacious / extreme risk and reward]\",\n" + \
+		"      \"text\": \"The payout isn't worth the risk. Increase it.\",\n" + \
 		"      \"consequence\": {\n" + \
 		"        \"credits_immediate\": 0,\n" + \
-		"        \"reputation_change\": {\"[client_faction]\": -5},\n" + \
+		"        \"reputation_change\": {\"" + chosen_faction + "\": -5},\n" + \
 		"        \"combat_multiplier\": 1.7,\n" + \
 		"        \"reward_credits_multiplier\": 1.6,\n" + \
-		"        \"dialogue_response\": \"[Agent response. Point out how suicidal this is but that you respect their hustle. E.g. 'Hustling a hustler? I like the nerve. Contract payout increased, but expect heavy resistance.']\"\n" + \
+		"        \"dialogue_response\": \"" + example_response_3 + "\"\n" + \
 		"      }\n" + \
 		"    }\n" + \
 		"  ]\n" + \
-		"}"
+		"}\n\n" + \
+		"Now generate a COMPLETELY DIFFERENT quest with a unique title and all-new dialogue written in your character's voice. " + \
+		"The faction must be \"" + chosen_faction + "\". The agent_name must be \"" + agent_name + "\". " + \
+		"The objective type must be either 'DELIVER_ORE' or 'KILL_SHIPS' — choose whichever fits the story best. " + \
+		kill_target_constraint + \
+		"For KILL_SHIPS include 'target_faction' and 'count_required'. For DELIVER_ORE include 'amount_required'. " + \
+		"Always call the pilot '" + player_nickname + "' — never use any other nickname. " + \
+		"Output only the raw JSON object."
 	
 	var payload = {
 		"model": active_model_name,
@@ -420,11 +530,12 @@ func request_quest_generation(agent_faction: String, history_text: String, playe
 	var json_str = JSON.stringify(payload)
 	var headers = ["Content-Type: application/json"]
 	
-	print("[LLMInterface] Sending request to Ollama...")
+	print("[LLMInterface] Sending request to Ollama for faction: ", chosen_faction, " agent: ", agent_name)
 	var err = http_request.request(OLLAMA_URL, headers, HTTPClient.METHOD_POST, json_str)
 	if err != OK:
 		print("[LLMInterface] HTTP request failed to initiate. Error code: ", err)
 		_trigger_fallback()
+
 
 func _on_request_completed(result: int, response_code: int, headers: PackedStringArray, body: PackedByteArray):
 	is_waiting = false
@@ -715,6 +826,99 @@ func fetch_salvager_profile(callback: Callable):
 	if err != OK:
 		temp_http.queue_free()
 		_trigger_salvager_profile_fallback(callback)
+
+func request_kaelen_reaction(quest_data: Dictionary, callback: Callable):
+	# Build a minimal context summary for Kaelen to react to
+	var title = quest_data.get("title", "the contract")
+	var faction = quest_data.get("faction", "neutral").capitalize()
+	var obj = quest_data.get("objective", {})
+	var obj_type = obj.get("type", "")
+	var task_desc = ""
+	if obj_type == "DELIVER_ORE":
+		task_desc = "deliver %s m³ of ore for %s credits" % [str(int(obj.get("amount_required", 20))), str(obj.get("reward_credits", 150))]
+	elif obj_type == "KILL_SHIPS":
+		task_desc = "destroy %d %s ships for %s credits" % [obj.get("count_required", 3), obj.get("target_faction", "enemy").capitalize(), str(obj.get("reward_credits", 200))]
+	else:
+		task_desc = "complete the contract"
+
+	var prompt = "You are Broker Kaelen, a cynical, profit-driven, politically neutral space broker. " + \
+		"You call the pilot 'Shiny'. You just brokered a contract named '" + title + "' for the " + faction + " faction — the task was to " + task_desc + ". " + \
+		"Generate TWO short unique lines of dialogue from Kaelen (under 25 words each): " + \
+		"one she says when the pilot successfully completes and hands in the contract (satisfied but still self-interested), " + \
+		"and one she says when the pilot abandons mid-contract (annoyed, sharp, but keeps it professional). " + \
+		"Reference the specific quest task or faction naturally. Do NOT use generic lines. " + \
+		"You MUST respond strictly in valid JSON format. Only output the raw JSON object:\n" + \
+		"{\n" + \
+		"  \"completion\": \"[Kaelen's unique completion line]\",\n" + \
+		"  \"abandon\": \"[Kaelen's unique abandon line]\"\n" + \
+		"}"
+
+	var temp_http = HTTPRequest.new()
+	add_child(temp_http)
+	temp_http.timeout = 12.0
+
+	temp_http.request_completed.connect(func(result, response_code, headers, body):
+		temp_http.queue_free()
+
+		if result != HTTPRequest.RESULT_SUCCESS or response_code != 200:
+			print("[LLMInterface] Kaelen reaction fetch failed. Using fallback lines.")
+			_trigger_kaelen_reaction_fallback(callback)
+			return
+
+		var response_text = body.get_string_from_utf8()
+		var json = JSON.new()
+		if json.parse(response_text) != OK:
+			_trigger_kaelen_reaction_fallback(callback)
+			return
+
+		var outer_data = json.get_data()
+		if not outer_data is Dictionary or not outer_data.has("response"):
+			_trigger_kaelen_reaction_fallback(callback)
+			return
+
+		var inner_json_str = outer_data["response"].strip_edges()
+		if inner_json_str.begins_with("```"):
+			var end_idx = inner_json_str.find("\n", 3)
+			if end_idx != -1:
+				inner_json_str = inner_json_str.substr(end_idx + 1)
+			if inner_json_str.ends_with("```"):
+				inner_json_str = inner_json_str.substr(0, inner_json_str.length() - 3)
+			inner_json_str = inner_json_str.strip_edges()
+
+		var inner_json = JSON.new()
+		if inner_json.parse(inner_json_str) != OK:
+			_trigger_kaelen_reaction_fallback(callback)
+			return
+
+		var reaction_data = inner_json.get_data()
+		if reaction_data is Dictionary and reaction_data.has("completion") and reaction_data.has("abandon"):
+			print("[LLMInterface] Kaelen reaction lines generated for quest: ", title)
+			callback.call(reaction_data["completion"], reaction_data["abandon"])
+		else:
+			_trigger_kaelen_reaction_fallback(callback)
+	)
+
+	var payload = {
+		"model": active_model_name,
+		"prompt": prompt,
+		"stream": false,
+		"format": "json",
+		"options": {
+			"temperature": 0.9,
+			"seed": randi()
+		}
+	}
+	var json_str = JSON.stringify(payload)
+	var headers = ["Content-Type: application/json"]
+	var err = temp_http.request(OLLAMA_URL, headers, HTTPClient.METHOD_POST, json_str)
+	if err != OK:
+		temp_http.queue_free()
+		_trigger_kaelen_reaction_fallback(callback)
+
+func _trigger_kaelen_reaction_fallback(callback: Callable):
+	var comp = fallback_completion_lines[randi() % fallback_completion_lines.size()]
+	var abn = fallback_abandon_lines[randi() % fallback_abandon_lines.size()]
+	callback.call(comp, abn)
 
 func _trigger_salvager_profile_fallback(callback: Callable):
 	var rand_name = fallback_salvager_names[randi() % fallback_salvager_names.size()]

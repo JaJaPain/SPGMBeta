@@ -95,6 +95,44 @@ func spawn_reinforcement(faction_name: String):
 			var alert = LLMInterface.get_chatter_line("system_alert")
 			emit_chatter("SYSTEM", alert, Color(0.0, 0.9, 0.9))
 
+func spawn_mission_targets(faction_name: String, count: int):
+	var player_node = player
+	if not player_node or not is_instance_valid(player_node) or player_node.get("destroyed"):
+		return
+	
+	var current_scene = get_tree().current_scene
+	if not current_scene:
+		return
+	
+	var npc_scene = load("res://scenes/npc_ship.tscn")
+	if not npc_scene:
+		print("[GlobalState] ERROR: Could not load npc_ship.tscn for mission targets.")
+		return
+	
+	print("[GlobalState] Spawning ", count, " mission targets for faction: ", faction_name)
+	
+	# Spawn ships spread around the player at 120-200m so they don't pile up
+	for i in range(count):
+		var angle = (TAU / count) * i + randf_range(-0.3, 0.3)
+		var dist = randf_range(120.0, 200.0)
+		var offset = Vector3(cos(angle), randf_range(-0.1, 0.1), sin(angle)) * dist
+		var spawn_pos = player_node.global_position + offset
+		
+		var npc = npc_scene.instantiate()
+		npc.faction = faction_name
+		npc.is_reinforcement = false
+		npc.name = faction_name.to_upper() + "_MissionTarget_" + str(randi() % 1000)
+		current_scene.add_child(npc)
+		npc.global_position = spawn_pos
+	
+	# HUD warning + chatter so the arrival feels like an event
+	var ui = current_scene.get_node_or_null("CanvasLayer/UIManager")
+	if ui and ui.has_method("show_hud_warning"):
+		ui.show_hud_warning("CONTRACT ACTIVE: " + str(count) + " " + faction_name.to_upper() + " targets have entered the sector.")
+	emit_chatter("SYSTEM", "Sensor sweep: " + str(count) + " " + faction_name.to_upper() + " signatures detected nearby.", Color(0.0, 0.9, 0.9))
+
+
+
 func emit_chatter(sender: String, message: String, color: Color):
 	system_chatter_received.emit(sender, message, color)
 
