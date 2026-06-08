@@ -50,9 +50,12 @@ func is_quest_completed() -> bool:
 	if type == "KILL_SHIPS":
 		return active_quest["current_count"] >= active_quest["count_required"]
 	elif type == "DELIVER_ORE":
-		return GlobalState.cargo >= active_quest["amount_required"]
+		# Count already-banked ore plus what's currently in the hold
+		var banked = active_quest.get("partial_delivered", 0.0)
+		return (banked + GlobalState.cargo) >= active_quest["amount_required"]
 		
 	return false
+
 
 func request_new_quest(agent_faction: String, callback: Callable):
 	var history_text = _load_quest_history()
@@ -103,10 +106,27 @@ func accept_quest(quest_data: Dictionary, selected_choice: Dictionary):
 		)
 	elif type == "DELIVER_ORE":
 		active_quest["amount_required"] = max(1.0, snapped(obj_data.get("amount_required", 20.0), 1.0))
+		active_quest["partial_delivered"] = 0.0  # Tracks ore already handed in via partial shipments
 		
 	print("[QuestManager] Quest accepted: ", active_quest["title"], " type:", type, " (Difficulty multiplier: ", combat_mult, ")")
 	quest_accepted.emit()
 
+
+# Bank a partial ore delivery. Returns the amount actually delivered (capped at remaining need).
+func deliver_partial(amount: float) -> float:
+	if not is_quest_active() or active_quest["objective_type"] != "DELIVER_ORE":
+		return 0.0
+	var remaining = active_quest["amount_required"] - active_quest.get("partial_delivered", 0.0)
+	var to_deliver = min(amount, remaining, GlobalState.cargo)
+	to_deliver = max(0.0, to_deliver)
+	if to_deliver <= 0.0:
+		return 0.0
+	GlobalState.cargo -= to_deliver
+	active_quest["partial_delivered"] = active_quest.get("partial_delivered", 0.0) + to_deliver
+	print("[QuestManager] Partial delivery: %.1f m³ banked. Total so far: %.1f / %.1f" % [
+		to_deliver, active_quest["partial_delivered"], active_quest["amount_required"]])
+	quest_progress_updated.emit()
+	return to_deliver
 
 func complete_quest():
 	if not is_quest_active() or not is_quest_completed():
@@ -118,9 +138,12 @@ func complete_quest():
 	# Adjust faction relationship positive gain
 	GlobalState.adjust_reputation(active_quest["faction"], 5.0)
 	
-	# If delivery quest, deduct cargo
+	# If delivery quest, deduct only whatever remaining cargo is still in the hold
+	# (partial deliveries already deducted cargo when they were banked)
 	if active_quest["objective_type"] == "DELIVER_ORE":
-		GlobalState.cargo -= active_quest["amount_required"]
+		var banked = active_quest.get("partial_delivered", 0.0)
+		var remaining_needed = max(0.0, active_quest["amount_required"] - banked)
+		GlobalState.cargo -= remaining_needed
 		
 	# Append to history file log
 	var detail = "Completed. Payout: " + str(final_payout) + " SC. Choice selected: '" + active_quest["choice_text_selected"] + "'."

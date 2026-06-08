@@ -1025,3 +1025,90 @@ func _trigger_salvager_profile_fallback(callback: Callable):
 		"backstory": rand_backstory
 	}
 	callback.call(profile)
+
+# Fallback lines for when Kaelen acknowledges a partial ore drop-off
+var fallback_partial_delivery_lines = [
+	"I'll set this aside for you, Shiny. But don't get comfortable — my client wants the rest, and they're not patient people.",
+	"Noted. I'll log it against your contract. You've still got a haul to finish, so stop wasting time chatting with me.",
+	"Banking what you've got. Get the rest of that ore before my client starts asking questions I can't answer.",
+	"Partial logged. My client is going to ask when the shipment is complete, and 'almost' isn't a number they recognise.",
+	"Fine, I'll hold it. But I'm not a warehouse, Shiny — get out there and finish the run.",
+]
+
+# Generate a unique Kaelen line for a partial ore delivery.
+# delivered_amount: m³ just dropped off now. total_banked: cumulative m³ banked so far. total_required: full contract amount.
+func request_partial_delivery_line(quest_title: String, delivered_amount: float, total_banked: float, total_required: float, callback: Callable):
+	var remaining = max(0.0, total_required - total_banked)
+	var pct = int(clamp(total_banked / total_required * 100.0, 0.0, 99.0))
+
+	var prompt = "You are Broker Kaelen, a cynical profit-driven space broker. You call the pilot 'Shiny'. " + \
+		"The pilot just dropped off %.0f m³ of ore as a partial shipment for the contract '%s'. " % [delivered_amount, quest_title] + \
+		"They have now delivered %.0f / %.0f m³ total (%d%% done). They still owe %.0f m³ more. " % [total_banked, total_required, pct, remaining] + \
+		"Generate ONE short line of dialogue from Kaelen (under 25 words) reacting to this. " + \
+		"She should: acknowledge she's holding it for them, mention the remaining amount or urgency, and be characteristically impatient or wry. " + \
+		"Reference the specific numbers. PG-13 tone — she can be sharp. Do NOT use generic lines. " + \
+		"You MUST respond strictly in valid JSON format. Only output the raw JSON object:\n" + \
+		"{\n" + \
+		"  \"line\": \"[Kaelen's unique partial delivery line]\"\n" + \
+		"}"
+
+	var temp_http = HTTPRequest.new()
+	add_child(temp_http)
+	temp_http.timeout = 10.0
+
+	temp_http.request_completed.connect(func(result, response_code, headers, body):
+		temp_http.queue_free()
+
+		if result != HTTPRequest.RESULT_SUCCESS or response_code != 200:
+			callback.call(fallback_partial_delivery_lines[randi() % fallback_partial_delivery_lines.size()])
+			return
+
+		var response_text = body.get_string_from_utf8()
+		var json = JSON.new()
+		if json.parse(response_text) != OK:
+			callback.call(fallback_partial_delivery_lines[randi() % fallback_partial_delivery_lines.size()])
+			return
+
+		var outer_data = json.get_data()
+		if not outer_data is Dictionary or not outer_data.has("response"):
+			callback.call(fallback_partial_delivery_lines[randi() % fallback_partial_delivery_lines.size()])
+			return
+
+		var inner_json_str = outer_data["response"].strip_edges()
+		if inner_json_str.begins_with("```"):
+			var end_idx = inner_json_str.find("\n", 3)
+			if end_idx != -1:
+				inner_json_str = inner_json_str.substr(end_idx + 1)
+			if inner_json_str.ends_with("```"):
+				inner_json_str = inner_json_str.substr(0, inner_json_str.length() - 3)
+			inner_json_str = inner_json_str.strip_edges()
+
+		var inner_json = JSON.new()
+		if inner_json.parse(inner_json_str) != OK:
+			callback.call(fallback_partial_delivery_lines[randi() % fallback_partial_delivery_lines.size()])
+			return
+
+		var data = inner_json.get_data()
+		if data is Dictionary and data.has("line") and data["line"] is String and data["line"].length() > 3:
+			callback.call(data["line"])
+		else:
+			callback.call(fallback_partial_delivery_lines[randi() % fallback_partial_delivery_lines.size()])
+	)
+
+	var payload = {
+		"model": active_model_name,
+		"prompt": prompt,
+		"stream": false,
+		"format": "json",
+		"options": {
+			"temperature": 0.92,
+			"seed": randi()
+		}
+	}
+	var json_str = JSON.stringify(payload)
+	var headers = ["Content-Type: application/json"]
+	var err = temp_http.request(OLLAMA_URL, headers, HTTPClient.METHOD_POST, json_str)
+	if err != OK:
+		temp_http.queue_free()
+		callback.call(fallback_partial_delivery_lines[randi() % fallback_partial_delivery_lines.size()])
+

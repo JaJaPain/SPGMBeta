@@ -1727,11 +1727,22 @@ func _on_talk_to_agent_pressed():
 		comp_btn.pressed.connect(_on_agent_complete_pressed)
 		agent_choices_container.add_child(comp_btn)
 		
+		# Partial shipment button — ore quests only, when player has cargo but isn't done yet
+		if q["objective_type"] == "DELIVER_ORE" and GlobalState.cargo > 0.5 and not QuestManager.is_quest_completed():
+			var banked = q.get("partial_delivered", 0.0)
+			var remaining = q["amount_required"] - banked
+			var deliverable = min(GlobalState.cargo, remaining)
+			var partial_btn = Button.new()
+			partial_btn.text = "Drop Off Partial Shipment (%.0f m³)" % deliverable
+			partial_btn.pressed.connect(func(): _on_partial_delivery_pressed(deliverable))
+			agent_choices_container.add_child(partial_btn)
+		
 		# Create Abandon button
 		var abn_btn = Button.new()
 		abn_btn.text = "Abandon Contract"
 		abn_btn.pressed.connect(_on_agent_abandon_pressed)
 		agent_choices_container.add_child(abn_btn)
+
 	else:
 		_refresh_agent_quest_board()
 
@@ -2025,6 +2036,52 @@ func _on_agent_abandon_pressed():
 		print("[TRACE] [UIManager] Cache empty on abandon. Pre-caching next quest.")
 		QuestManager.request_new_quest("neutral", _on_background_quest_generated)
 
+func _on_partial_delivery_pressed(deliverable: float):
+	TTSInterface.start_interaction("Partial Delivery")
+	
+	# Clear buttons immediately to prevent double-tap
+	for child in agent_choices_container.get_children():
+		child.queue_free()
+	
+	# Bank the ore via QuestManager (deducts cargo, adds to partial_delivered)
+	var q = QuestManager.active_quest
+	var actually_delivered = QuestManager.deliver_partial(deliverable)
+	if actually_delivered <= 0.0:
+		_on_talk_to_agent_pressed()
+		return
+	
+	var total_banked = q.get("partial_delivered", 0.0)
+	var required = q.get("amount_required", 1.0)
+	var quest_title = q.get("title", "the contract")
+	
+	# Switch to Kaelen portrait while fetching her reaction
+	agent_name_label.text = "BROKER KAELEN"
+	_update_agent_portrait("neutral")
+	agent_dialogue_label.text = "Logging your shipment... stand by."
+	agent_back_btn.visible = false
+	
+	# Request unique Kaelen reaction from LLM
+	LLMInterface.request_partial_delivery_line(
+		quest_title, actually_delivered, total_banked, required,
+		func(line: String):
+			var clean = TTSInterface.clean_dialogue_text(line)
+			agent_dialogue_label.text = clean
+			TTSInterface.play_dialogue_audio(clean, "neutral")
+			
+			# Add back button so player can undock or check contract
+			var back_btn = Button.new()
+			back_btn.text = "Back to Services"
+			back_btn.pressed.connect(func():
+				TTSInterface.play_dialogue_audio("", "neutral")
+				agent_panel.visible = false
+				dock_panel.visible = true
+			)
+			agent_choices_container.add_child(back_btn)
+			agent_back_btn.visible = true
+	)
+
+
+
 func _on_quest_accepted():
 	quest_tracker_panel.visible = true
 	_update_quest_tracker()
@@ -2053,9 +2110,16 @@ func _update_quest_tracker():
 	if q["objective_type"] == "KILL_SHIPS":
 		quest_tracker_progress.text = "Kills: " + str(q["current_count"]) + " / " + str(q["count_required"]) + " (" + q["target_faction"].to_upper() + ")"
 	elif q["objective_type"] == "DELIVER_ORE":
-		quest_tracker_progress.text = "Ore: " + str(int(GlobalState.cargo)) + " / " + str(int(q["amount_required"])) + " m³"
-		if GlobalState.cargo >= q["amount_required"]:
+		var banked = q.get("partial_delivered", 0.0)
+		var in_hold = GlobalState.cargo
+		var required = q["amount_required"]
+		var total_so_far = banked + in_hold
+		quest_tracker_progress.text = "Ore: %.0f / %.0f m³" % [total_so_far, required]
+		if banked > 0:
+			quest_tracker_progress.text += " (%.0f banked)" % banked
+		if total_so_far >= required:
 			quest_tracker_progress.text += " (Ready)"
+
 
 func _update_quest_tracker_logo(faction: String):
 	if quest_tracker_logo and faction_branding_sheet:
