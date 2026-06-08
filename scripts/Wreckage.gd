@@ -1,6 +1,7 @@
 extends StaticBody3D
 
 var being_salvaged: bool = false
+var last_attacker_faction: String = ""  # Set by NPCShip.die() so salvager knows if player killed this
 
 func initialize(original_hull: Node3D):
 	if original_hull:

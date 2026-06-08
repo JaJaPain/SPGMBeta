@@ -623,7 +623,7 @@ func _trigger_fallback():
 	if active_callback.is_valid():
 		active_callback.call(selected_quest, true)
 
-func get_chatter_line(type: String) -> String:
+func get_chatter_line(type: String, context: Dictionary = {}) -> String:
 	if not chatter_cache.has(type):
 		return "Static on comms..."
 		
@@ -636,27 +636,118 @@ func get_chatter_line(type: String) -> String:
 		
 	# Trigger background pre-fetch if cache is running low and not currently fetching
 	if chatter_cache[type].size() < 2 and not active_fetches[type]:
-		fetch_chatter_background(type)
+		fetch_chatter_background(type, context)
 		
 	return line
 
-func fetch_chatter_background(type: String):
+# Build a context dict from current GlobalState for use in chatter prompts
+func _build_chatter_context(extra: Dictionary = {}) -> Dictionary:
+	var ctx: Dictionary = {}
+	ctx["player_credits"] = GlobalState.player_credits
+	ctx["cargo"] = int(GlobalState.cargo)
+	ctx["cargo_max"] = int(GlobalState.cargo_max)
+	var reps = GlobalState.reputations
+	ctx["rep_zenith"]   = int(reps.get("zenith",   50.0))
+	ctx["rep_aurelia"]  = int(reps.get("aurelia", -20.0))
+	ctx["rep_vanguard"] = int(reps.get("vanguard", -20.0))
+	var qm = Engine.get_singleton("QuestManager") if Engine.has_singleton("QuestManager") else null
+	if qm == null:
+		var tree = Engine.get_main_loop()
+		if tree and tree.root:
+			qm = tree.root.get_node_or_null("/root/QuestManager")
+	if qm and qm.is_quest_active():
+		ctx["active_quest_title"] = qm.active_quest.get("title", "")
+		ctx["active_quest_type"]  = qm.active_quest.get("objective_type", "")
+	for k in extra:
+		ctx[k] = extra[k]
+	return ctx
+
+
+func fetch_chatter_background(type: String, context: Dictionary = {}):
 	active_fetches[type] = true
+	
+	# Merge in live GlobalState context
+	var ctx = _build_chatter_context(context)
+	
+	var credits_str  = str(ctx.get("player_credits", 0)) + " SC"
+	var cargo_str    = str(ctx.get("cargo", 0)) + "/" + str(ctx.get("cargo_max", 100)) + " m³"
+	var rep_str      = "Zenith " + str(ctx.get("rep_zenith", 50)) + \
+		", Aurelia " + str(ctx.get("rep_aurelia", -20)) + \
+		", Vanguard " + str(ctx.get("rep_vanguard", -20))
+	var quest_str    = ctx.get("active_quest_title", "none")
+	var attacker_fac = ctx.get("attacker_faction", "unknown")
+	var wreck_name   = ctx.get("wreck_name", "")
+	var killed_by_player = ctx.get("killed_by_player", false)
+	
+	var context_block = "\nCurrent game context:\n" + \
+		"- Pilot credits: " + credits_str + "\n" + \
+		"- Cargo hold: " + cargo_str + "\n" + \
+		"- Faction reputations: " + rep_str + "\n" + \
+		"- Active contract: " + quest_str + "\n"
 	
 	# Describe the generation task to Ollama based on type
 	var description = ""
 	match type:
 		"hostile_taunt":
-			description = "3 unique, short (under 12 words) hostile radio taunts spoken by an enemy NPC pilot attacking the player. Use space theme terminology. Be aggressive or mocking."
+			var faction_hint = ""
+			if attacker_fac != "unknown":
+				faction_hint = "The attacker is a " + attacker_fac.to_upper() + " pilot. "
+			var cargo_hint = ""
+			if ctx.get("cargo", 0) > 10:
+				cargo_hint = "The target is hauling " + cargo_str + " of cargo — taunt them about it. "
+			var rep_hint = ""
+			if ctx.get("rep_zenith", 50) < -30:
+				rep_hint = "The pilot has burned bridges with Zenith — reference this enmity. "
+			elif ctx.get("rep_aurelia", 0) < -30:
+				rep_hint = "The pilot is despised by Aurelia — use this in the taunt. "
+			var mission_hint = ""
+			if quest_str != "none":
+				mission_hint = "The target is on a contract called '" + quest_str + "' — mock them for it. "
+			description = "3 unique, aggressive radio taunts (under 12 words each) from a " + \
+				attacker_fac.to_upper() + " enemy pilot targeting the player ship. " + \
+				faction_hint + cargo_hint + rep_hint + mission_hint + \
+				"Be creative, threatening, and faction-flavoured. No generic lines."
 		"death_cry":
-			description = "3 unique, short (under 12 words) dramatic radio death cries spoken by an NPC pilot as their ship is exploding. Include static or garbled transmission markers like '[static]' or '...'."
+			var ship_hint = ""
+			if attacker_fac != "unknown":
+				ship_hint = "The dying pilot flew for " + attacker_fac.to_upper() + ". "
+			description = "3 unique dramatic death radio transmissions (under 12 words each) from a " + \
+				attacker_fac.to_upper() + " pilot as their ship explodes. " + ship_hint + \
+				"Include static markers like '[static]' or '...'. Vary tone: some defiant, some fearful, some darkly funny."
 		"system_alert":
-			description = "3 unique, short (under 12 words) computerized system announcements or sector warnings. Keep it cold, robotic, and technical."
+			description = "3 unique cold robotic system announcements or sector warnings (under 12 words each). " + \
+				"Vary the threat type — gravitational, faction, radiation, debris field."
 		"industrial_banter":
-			description = "3 unique, short (under 12 words) radio chatter lines spoken by a salvager ship crew approaching debris or wreckage. Focus on profit, salvage, scrap, or hauling."
-			
-	var system_prompt = "You are writing radio chatter dialogue lines for a space simulation game. " + \
-		"Generate " + description + " " + \
+			var wreck_hint = ""
+			if wreck_name != "":
+				# Parse faction and ship type out of the node name (e.g. AURELIA_Raider_512_Wreck)
+				var upper = wreck_name.to_upper()
+				var faction_found = ""
+				for f in ["ZENITH", "AURELIA", "VANGUARD"]:
+					if f in upper:
+						faction_found = f
+						break
+				var ship_class = ""
+				for c in ["PATROL", "RAIDER", "SENTINEL", "INTERCEPTOR", "ELITE"]:
+					if c in upper:
+						ship_class = c
+						break
+				if killed_by_player:
+					wreck_hint = "The salvager is cutting up a " + faction_found + " " + ship_class + \
+						" wreck left by the player pilot. Comment on the battle damage, " + \
+						"the hull condition, the pilot who must have done this, or what they can salvage. " + \
+						"Be colourful — e.g. 'whoever hit this thing wasn't messing around'. "
+				else:
+					wreck_hint = "The salvager is approaching a " + faction_found + " " + ship_class + \
+						" wreck. Comment on the expected salvage value or the faction's gear quality. "
+			description = "3 unique radio chatter lines (under 15 words each) from a scrapper salvage crew. " + \
+				wreck_hint + \
+				"They are pragmatic, slightly world-weary, always thinking about credits. Avoid clichés."
+		
+	var system_prompt = "You are writing radio chatter dialogue lines for a space simulation game rated PG-13. " + \
+		"Colourful language, mild swearing, dark humour, and sharp insults are encouraged where they fit the character. " + \
+		"Do NOT use explicit sexual content or slurs. Everything else is fair game — be creative and unpredictable. " + \
+		"Generate " + description + context_block + \
 		"You MUST respond strictly in valid JSON format matching this schema exactly. Do not output any notes, markdown codeblock formatting, or surrounding text. Only output the raw JSON object:\n" + \
 		"{\n" + \
 		"  \"dialogues\": [\n" + \
@@ -672,7 +763,7 @@ func fetch_chatter_background(type: String):
 		"stream": false,
 		"format": "json",
 		"options": {
-			"temperature": 0.85,
+			"temperature": 0.9,
 			"seed": randi()
 		}
 	}
@@ -731,6 +822,7 @@ func fetch_chatter_background(type: String):
 	if err != OK:
 		active_fetches[type] = false
 		temp_http.queue_free()
+
 
 var fallback_salvager_names = [
 	"Maeve Sterling",

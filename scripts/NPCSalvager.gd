@@ -81,8 +81,12 @@ func _physics_process(delta: float):
 					target_wreck.set("being_salvaged", true)
 					state = "APPROACHING"
 					
-					# Trigger industrial banter in radio chatter
-					var banter = LLMInterface.get_chatter_line("industrial_banter")
+					# Trigger industrial banter — pass wreck name and kill attribution for contextual LLM lines
+					var killed_by_player = target_wreck.get("last_attacker_faction") == "player"
+					var banter = LLMInterface.get_chatter_line("industrial_banter", {
+						"wreck_name": target_wreck.name,
+						"killed_by_player": killed_by_player
+					})
 					GlobalState.emit_chatter(name, banter, Color(0.9, 0.7, 0.1))
 					break
 					

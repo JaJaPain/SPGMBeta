@@ -272,7 +272,9 @@ func fire():
 	if target == GlobalState.player:
 		if not taunted_player:
 			taunted_player = true
-			var taunt = LLMInterface.get_chatter_line("hostile_taunt")
+			var taunt = LLMInterface.get_chatter_line("hostile_taunt", {
+				"attacker_faction": faction
+			})
 			var fac_color = Color(1.0, 1.0, 1.0)
 			match faction:
 				"zenith": fac_color = Color(1.0, 0.6, 0.1) # Orange
@@ -339,6 +341,7 @@ func die():
 		wreck.global_rotation = global_rotation
 		wreck.add_to_group("wreckage")
 		wreck.call("initialize", visual)
+		wreck.last_attacker_faction = last_attacker_faction  # Salvager uses this to know if player killed it
 		
 	GlobalState.destroyed_ships_pool += 1
 	
@@ -348,7 +351,9 @@ func die():
 		_apply_reputation_changes()
 		
 		# Trigger death cry chatter
-		var cry = LLMInterface.get_chatter_line("death_cry")
+		var cry = LLMInterface.get_chatter_line("death_cry", {
+			"attacker_faction": faction
+		})
 		var fac_color = Color(1.0, 1.0, 1.0)
 		match faction:
 			"zenith": fac_color = Color(1.0, 0.6, 0.1)
