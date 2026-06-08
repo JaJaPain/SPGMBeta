@@ -449,14 +449,15 @@ func request_quest_generation(agent_faction: String, history_text: String, playe
 			example_response_2 = "Taking a bite out of my margins, Shiny? Fine. Credits wired. But I'm routing you through a contested lane to cover the difference."
 			example_response_3 = "Hustling a hustler? I respect the nerve, Shiny. Payout is bumped. But enemies will be expecting you."
 	
-	# Randomly pick which objective type to demonstrate in the example (50/50)
-	# so the LLM sees both formats equally and generates a mix
+	# Pre-decide objective type so example AND instruction always match.
+	# The LLM cannot choose — it must use the type we picked.
+	var chosen_type = "DELIVER_ORE" if randi() % 2 == 0 else "KILL_SHIPS"
+	
+	# Build the matching example block
 	var example_obj_block = ""
 	var example_title = ""
-	var kill_target_constraint = ""
 	
-	if randi() % 2 == 0:
-		# Show a DELIVER_ORE example
+	if chosen_type == "DELIVER_ORE":
 		example_title = "Silicate Run"
 		example_obj_block = \
 			"  \"objective\": {\n" + \
@@ -465,7 +466,7 @@ func request_quest_generation(agent_faction: String, history_text: String, playe
 			"    \"reward_credits\": 160\n" + \
 			"  },"
 	else:
-		# Show a KILL_SHIPS example
+		# KILL_SHIPS — pick a kill target that isn't the client faction
 		var kill_targets = ["zenith", "aurelia", "vanguard"]
 		kill_targets.erase(chosen_faction)
 		var kill_target = kill_targets[randi() % kill_targets.size()]
@@ -477,6 +478,20 @@ func request_quest_generation(agent_faction: String, history_text: String, playe
 			"    \"count_required\": 3,\n" + \
 			"    \"reward_credits\": 200\n" + \
 			"  },"
+
+	# Also align the agent example dialogue to the chosen type so the LLM
+	# sees a consistent story/objective pairing in the example block
+	if chosen_type == "KILL_SHIPS":
+		match chosen_faction:
+			"zenith":
+				example_dialogue = "We need the Aurelia raider wing cleared from the transit corridor, " + player_nickname + ". Three contacts, high priority. Don't leave witnesses."
+			"aurelia":
+				example_dialogue = "There's a Vanguard patrol harassing our supply runners, " + player_nickname + ". Four ships. Remove them quietly and I'll make sure the credits flow."
+			"vanguard":
+				example_dialogue = "Zenith is probing our flank again, Merc. Four contacts in the sector. Clear the zone before they can report back."
+			_:
+				example_dialogue = "Got a hostile problem that needs solving, " + player_nickname + ". A handful of ships that need removing. Standard removal contract."
+
 
 
 	var system_prompt = agent_persona + "\n\n" + \
@@ -532,9 +547,8 @@ func request_quest_generation(agent_faction: String, history_text: String, playe
 		"}\n\n" + \
 		"Now generate a COMPLETELY DIFFERENT quest with a unique title and all-new dialogue written in your character's voice. " + \
 		"The faction must be \"" + chosen_faction + "\". The agent_name must be \"" + agent_name + "\". " + \
-		"The objective type must be either 'DELIVER_ORE' or 'KILL_SHIPS' — choose whichever fits the story best. " + \
-		kill_target_constraint + \
-		"For KILL_SHIPS include 'target_faction' and 'count_required'. For DELIVER_ORE include 'amount_required'. " + \
+		"The objective type in your JSON MUST be '" + chosen_type + "' — do NOT use any other objective type. " + \
+		("For KILL_SHIPS you MUST include 'target_faction' (must NOT equal '" + chosen_faction + "') and 'count_required' (integer 2–6). " if chosen_type == "KILL_SHIPS" else "For DELIVER_ORE you MUST include 'amount_required' (float 20–300). ") + \
 		"Always call the pilot '" + player_nickname + "' — never use any other nickname. " + \
 		"Output only the raw JSON object."
 	
