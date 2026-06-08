@@ -59,15 +59,16 @@ func request_new_quest(agent_faction: String, callback: Callable):
 	LLMInterface.request_quest_generation(agent_faction, history_text, GlobalState.player_credits, GlobalState.reputations, callback)
 
 func accept_quest(quest_data: Dictionary, selected_choice: Dictionary):
-	var obj_data = quest_data["objective"]
-	var type = obj_data["type"]
-	var reward_credits = obj_data["reward_credits"]
+	# Defensive access — LLM data may be missing keys on malformed output
+	var obj_data = quest_data.get("objective", {})
+	var type = obj_data.get("type", "DELIVER_ORE")
+	var reward_credits = obj_data.get("reward_credits", 100)
 	
-	var consequence = selected_choice["consequence"]
+	var consequence = selected_choice.get("consequence", {})
 	var credits_immediate = consequence.get("credits_immediate", 0)
 	var rep_change = consequence.get("reputation_change", {})
-	var combat_mult = consequence.get("combat_multiplier", 1.0)
-	var reward_mult = consequence.get("reward_credits_multiplier", 1.0)
+	var combat_mult = max(0.5, consequence.get("combat_multiplier", 1.0))  # clamp: never 0
+	var reward_mult = max(0.5, consequence.get("reward_credits_multiplier", 1.0))
 	
 	# Apply immediate credit rewards/penalties
 	GlobalState.player_credits += credits_immediate
@@ -92,7 +93,7 @@ func accept_quest(quest_data: Dictionary, selected_choice: Dictionary):
 	
 	if type == "KILL_SHIPS":
 		active_quest["target_faction"] = obj_data.get("target_faction", "zenith")
-		active_quest["count_required"] = int(obj_data.get("count_required", 3) * combat_mult)
+		active_quest["count_required"] = max(1, int(obj_data.get("count_required", 3) * combat_mult))
 		active_quest["current_count"] = 0
 		# Schedule mission target spawn for shortly after undock (3 seconds gives time to clear the station)
 		var spawn_faction = active_quest["target_faction"]
@@ -101,10 +102,11 @@ func accept_quest(quest_data: Dictionary, selected_choice: Dictionary):
 			GlobalState.spawn_mission_targets(spawn_faction, spawn_count)
 		)
 	elif type == "DELIVER_ORE":
-		active_quest["amount_required"] = snapped(obj_data.get("amount_required", 20.0), 1.0)
+		active_quest["amount_required"] = max(1.0, snapped(obj_data.get("amount_required", 20.0), 1.0))
 		
-	print("[QuestManager] Quest accepted: ", active_quest["title"], " (Difficulty multiplier: ", combat_mult, ")")
+	print("[QuestManager] Quest accepted: ", active_quest["title"], " type:", type, " (Difficulty multiplier: ", combat_mult, ")")
 	quest_accepted.emit()
+
 
 func complete_quest():
 	if not is_quest_active() or not is_quest_completed():

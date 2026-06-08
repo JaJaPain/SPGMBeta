@@ -1772,8 +1772,9 @@ func _on_background_quest_generated(quest_data: Dictionary, is_fallback: bool):
 			if response != "":
 				TTSInterface.cache_dialogue_audio(response, quest_data.get("faction", "neutral"))
 				
-	# If the user is waiting on the agent menu board, refresh it immediately
-	if is_waiting_for_agent_board:
+	# Only push to agent board UI if the player is actually waiting for it
+	# AND no quest is currently active (avoid replacing UI mid-mission)
+	if is_waiting_for_agent_board and not QuestManager.is_quest_active():
 		is_waiting_for_agent_board = false
 		_on_quest_generated_received(cached_quest_data, cached_quest_is_fallback)
 		
@@ -1785,6 +1786,7 @@ func _on_background_quest_generated(quest_data: Dictionary, is_fallback: bool):
 		else:
 			loading_bar.value = 80.0
 			loading_status_label.text = "Pre-caching synthesized broker voice lines..."
+
 
 func _on_quest_generated_received(quest_data: Dictionary, is_fallback: bool):
 	var now = Time.get_ticks_msec()
@@ -2270,7 +2272,12 @@ func _on_tts_cache_completed():
 		loading_panel.queue_free()
 		GlobalState.paused = false # Resume gameplay!
 		print("[TRACE] [UIManager] Loading Screen completed. Game started!")
+		# Trigger Kaelen's intro popup 1s after loading — safely AFTER the overlay is gone
+		get_tree().create_timer(1.0).timeout.connect(func():
+			show_kaelen_intro()
+		)
 	)
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # KAELEN INTRO POPUP
