@@ -58,6 +58,10 @@ var context_action_btn: Button
 
 var current_station: Node3D = null
 
+var cached_quest_data: Dictionary = {}
+var cached_quest_is_fallback: bool = false
+var is_waiting_for_agent_board: bool = false
+
 # Sorting parameters
 var sort_column: String = "distance"
 var sort_ascending: bool = true
@@ -1188,6 +1192,11 @@ func toggle_dock_menu(station: Node3D):
 		if GlobalState.player:
 			GlobalState.player.is_docked = true
 			GlobalState.player.velocity = Vector3.ZERO
+			
+		# Start background quest pre-caching if no active quest and cache is empty
+		if not QuestManager.is_quest_active() and cached_quest_data.is_empty():
+			print("[TRACE] [UIManager] Player docked. Pre-caching agent quest in the background.")
+			QuestManager.request_new_quest("neutral", _on_background_quest_generated)
 
 func undock_player():
 	dock_panel.visible = false
@@ -1642,12 +1651,45 @@ func _on_talk_to_agent_pressed():
 
 func _refresh_agent_quest_board():
 	agent_name_label.text = "BROKER KAELEN"
-	agent_dialogue_label.text = "Broker Kaelen is checking client contract requests..."
-	agent_back_btn.visible = false
 	_update_agent_portrait("neutral")
 	
-	# Request new quest from local LLM / Fallback
-	QuestManager.request_new_quest("neutral", _on_quest_generated_received)
+	if not cached_quest_data.is_empty():
+		# We already have a pre-cached quest! Show it immediately
+		print("[TRACE] [UIManager] Pre-cached quest found. Loading board instantly.")
+		_on_quest_generated_received(cached_quest_data, cached_quest_is_fallback)
+	else:
+		# Still loading or not started yet
+		print("[TRACE] [UIManager] No pre-cached quest ready. Waiting for background generator...")
+		agent_dialogue_label.text = "Broker Kaelen is checking client contract requests..."
+		agent_back_btn.visible = false
+		is_waiting_for_agent_board = true
+		
+		# If the background generator hasn't started yet, trigger it now.
+		if not LLMInterface.is_waiting:
+			QuestManager.request_new_quest("neutral", _on_background_quest_generated)
+
+func _on_background_quest_generated(quest_data: Dictionary, is_fallback: bool):
+	cached_quest_data = quest_data
+	cached_quest_is_fallback = is_fallback
+	print("[TRACE] [UIManager] Background quest generated. Faction: ", quest_data.get("faction", "neutral"), " is_fallback: ", is_fallback)
+	
+	if not quest_data.is_empty():
+		# Pre-cache main briefing TTS
+		var dialogue = quest_data.get("dialogue", "")
+		if dialogue != "":
+			TTSInterface.cache_dialogue_audio(dialogue)
+			
+		# Pre-cache choice response TTS
+		var choices = quest_data.get("choices", [])
+		for choice in choices:
+			var response = choice.get("consequence", {}).get("dialogue_response", "")
+			if response != "":
+				TTSInterface.cache_dialogue_audio(response)
+				
+	# If the user is waiting on the agent menu board, refresh it immediately
+	if is_waiting_for_agent_board:
+		is_waiting_for_agent_board = false
+		_on_quest_generated_received(cached_quest_data, cached_quest_is_fallback)
 
 func _on_quest_generated_received(quest_data: Dictionary, is_fallback: bool):
 	var now = Time.get_ticks_msec()
@@ -1700,6 +1742,11 @@ func _on_quest_generated_received(quest_data: Dictionary, is_fallback: bool):
 
 func _on_choice_selected(quest_data: Dictionary, choice: Dictionary):
 	TTSInterface.start_interaction("Select Choice: " + choice.get("text", ""))
+	
+	cached_quest_data = {}
+	cached_quest_is_fallback = false
+	is_waiting_for_agent_board = false
+	
 	# Clear choices container
 	for child in agent_choices_container.get_children():
 		child.queue_free()
@@ -1729,6 +1776,11 @@ func _on_agent_back_pressed():
 
 func _on_agent_complete_pressed():
 	TTSInterface.start_interaction("Complete Contract")
+	
+	cached_quest_data = {}
+	cached_quest_is_fallback = false
+	is_waiting_for_agent_board = false
+	
 	for child in agent_choices_container.get_children():
 		child.queue_free()
 		
@@ -1737,9 +1789,18 @@ func _on_agent_complete_pressed():
 	agent_dialogue_label.text = "Pleasure doing business with you, pilot. Payout transferred and brokerage fee deducted. Check back soon."
 	TTSInterface.play_dialogue_audio(agent_dialogue_label.text)
 	agent_back_btn.visible = true
+	
+	# Start pre-caching the next quest in the background
+	print("[TRACE] [UIManager] Quest finished. Pre-caching next quest in the background.")
+	QuestManager.request_new_quest("neutral", _on_background_quest_generated)
 
 func _on_agent_abandon_pressed():
 	TTSInterface.start_interaction("Abandon Contract")
+	
+	cached_quest_data = {}
+	cached_quest_is_fallback = false
+	is_waiting_for_agent_board = false
+	
 	for child in agent_choices_container.get_children():
 		child.queue_free()
 		
@@ -1748,6 +1809,10 @@ func _on_agent_abandon_pressed():
 	agent_dialogue_label.text = "Contract dumped? You're costing me credit margins. I don't forget when people waste my time."
 	TTSInterface.play_dialogue_audio(agent_dialogue_label.text)
 	agent_back_btn.visible = true
+	
+	# Start pre-caching the next quest in the background
+	print("[TRACE] [UIManager] Quest finished. Pre-caching next quest in the background.")
+	QuestManager.request_new_quest("neutral", _on_background_quest_generated)
 
 func _on_quest_accepted():
 	quest_tracker_panel.visible = true

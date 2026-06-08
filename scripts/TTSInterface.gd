@@ -8,6 +8,7 @@ var tts_request_time: float = 0.0
 
 var last_interaction_time: float = 0.0
 var last_interaction_name: String = ""
+var tts_audio_cache: Dictionary = {}
 
 func start_interaction(interaction_name: String):
 	last_interaction_time = Time.get_ticks_msec()
@@ -28,14 +29,13 @@ func _ready():
 	add_child(audio_player)
 	
 	_check_and_start_tts_server()
+	
+	# Pre-cache static completion and abandon messages
+	cache_dialogue_audio("Pleasure doing business with you, pilot. Payout transferred and brokerage fee deducted. Check back soon.")
+	cache_dialogue_audio("Contract dumped? You're costing me credit margins. I don't forget when people waste my time.")
 
 func play_dialogue_audio(text: String):
 	tts_request_time = Time.get_ticks_msec()
-	var elapsed_str = ""
-	if last_interaction_time > 0.0:
-		elapsed_str = " (Elapsed since '%s': %.3fs)" % [last_interaction_name, (tts_request_time - last_interaction_time) / 1000.0]
-	print("[TRACE] [TTSInterface] play_dialogue_audio called at: %d ms%s" % [tts_request_time, elapsed_str])
-
 	
 	if is_requesting:
 		http_request.cancel_request()
@@ -51,6 +51,24 @@ func play_dialogue_audio(text: String):
 		print("[TRACE] [TTSInterface] Cleaned text is empty, skipping speech.")
 		return
 		
+	var elapsed_str = ""
+	if last_interaction_time > 0.0:
+		elapsed_str = " (Elapsed since '%s': %.3fs)" % [last_interaction_name, (tts_request_time - last_interaction_time) / 1000.0]
+		
+	# Check cache first!
+	if tts_audio_cache.has(clean_text):
+		var stream = tts_audio_cache[clean_text]
+		audio_player.stream = stream
+		audio_player.play()
+		var play_now = Time.get_ticks_msec()
+		var total_elapsed_str = ""
+		if last_interaction_time > 0.0:
+			total_elapsed_str = " (Total since '%s': %.3fs)" % [last_interaction_name, (play_now - last_interaction_time) / 1000.0]
+		print("[TRACE] [TTSInterface] play_dialogue_audio CACHE HIT at: %d ms%s. Playing immediately!%s" % [tts_request_time, elapsed_str, total_elapsed_str])
+		return
+		
+	print("[TRACE] [TTSInterface] play_dialogue_audio CACHE MISS at: %d ms%s" % [tts_request_time, elapsed_str])
+	
 	is_requesting = true
 	var payload = {
 		"text": clean_text,
@@ -66,6 +84,44 @@ func play_dialogue_audio(text: String):
 	if err != OK:
 		print("[TTSInterface] Failed to initiate HTTP request. Error code: ", err)
 		is_requesting = false
+
+func cache_dialogue_audio(text: String):
+	text = text.strip_edges()
+	var clean_text = _clean_dialogue_text(text)
+	if clean_text == "" or tts_audio_cache.has(clean_text):
+		return
+		
+	# Create a dynamic HTTPRequest node for caching
+	var temp_http = HTTPRequest.new()
+	add_child(temp_http)
+	temp_http.timeout = 15.0
+	
+	var payload = {
+		"text": clean_text,
+		"voice": "af_bella",
+		"speed": 1.0
+	}
+	var json_str = JSON.stringify(payload)
+	var headers = ["Content-Type: application/json"]
+	
+	print("[TRACE] [TTSInterface] Background caching started for text hash: ", clean_text.hash(), " (len: ", clean_text.length(), ")")
+	
+	temp_http.request_completed.connect(func(result, response_code, headers, body):
+		temp_http.queue_free()
+		if result == HTTPRequest.RESULT_SUCCESS and response_code == 200:
+			var stream = load_wav_from_buffer(body)
+			if stream:
+				tts_audio_cache[clean_text] = stream
+				print("[TRACE] [TTSInterface] Background caching completed for text hash: ", clean_text.hash())
+			else:
+				print("[TTSInterface] Background cache parsing failed for text hash: ", clean_text.hash())
+		else:
+			print("[TTSInterface] Background cache request failed. Code: ", response_code)
+	)
+	
+	var err = temp_http.request(TTS_URL, headers, HTTPClient.METHOD_POST, json_str)
+	if err != OK:
+		temp_http.queue_free()
 
 func _clean_dialogue_text(text: String) -> String:
 	# Strip off the "--- Contract Details ---" block or other metadata to only speak narrative
