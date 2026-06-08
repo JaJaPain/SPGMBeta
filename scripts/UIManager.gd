@@ -1609,13 +1609,15 @@ func refresh_overview():
 	var main = get_tree().current_scene
 	if not main: return
 	
-	# Add station, planets
-	var station = main.get_node_or_null("Station")
-	if station: entities.append(station)
+	# Add ALL stations (main + outposts) by group — never hardcode node names
+	for node in get_tree().get_nodes_in_group("station"):
+		if is_instance_valid(node):
+			entities.append(node)
 	var gas_giant = main.get_node_or_null("GasGiant")
 	if gas_giant: entities.append(gas_giant)
 	var rocky_planet = main.get_node_or_null("RockyPlanet")
 	if rocky_planet: entities.append(rocky_planet)
+
 	
 	# Add Asteroids
 	for node in get_tree().get_nodes_in_group("asteroid"):
