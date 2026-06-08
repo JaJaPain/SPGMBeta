@@ -44,23 +44,42 @@ func _ready():
 
 func _center_model(model_root: Node3D) -> void:
 	# Walk all MeshInstance3D descendants and build a merged AABB
+	# in model_root-local space using the FULL transform chain
 	var meshes: Array[MeshInstance3D] = []
 	_find_meshes(model_root, meshes)
 	if meshes.is_empty():
 		return
 	
-	var combined_aabb: AABB = meshes[0].get_aabb()
-	# Transform each mesh's local AABB into model_root-local space
-	combined_aabb = meshes[0].transform * combined_aabb
-	for i in range(1, meshes.size()):
-		var mesh_aabb = meshes[i].transform * meshes[i].get_aabb()
-		combined_aabb = combined_aabb.merge(mesh_aabb)
+	var first := true
+	var combined_aabb: AABB
+	for mesh in meshes:
+		# Get the full transform from mesh-local to model_root-local
+		var rel_xform := _relative_transform_to(mesh, model_root)
+		var transformed_aabb := rel_xform * mesh.get_aabb()
+		if first:
+			combined_aabb = transformed_aabb
+			first = false
+		else:
+			combined_aabb = combined_aabb.merge(transformed_aabb)
 	
-	# The center of the AABB (in model_root local space, pre-scale)
-	var center = combined_aabb.get_center()
-	# Shift the model so that center lands at the parent's origin
+	# Center of the merged AABB in model_root-local space (pre-scale)
+	var center := combined_aabb.get_center()
+	# Shift model so its visual center sits at Station's origin.
+	# model_root.position is in Station-local space, center is in
+	# model_root-local (pre-scale), so multiply by scale to convert.
 	model_root.position -= center * model_instance_scale
-	print("[Station] Auto-centered '", name, "': AABB center offset = ", center)
+	print("[Station] Auto-centered '", name, "': AABB center=", center, " size=", combined_aabb.size)
+
+func _relative_transform_to(from_node: Node3D, to_ancestor: Node3D) -> Transform3D:
+	## Returns the transform that maps from_node-local coords into to_ancestor-local coords,
+	## walking the full chain of intermediate nodes (Skeleton3D, BoneAttachment, etc.).
+	var xform := from_node.transform
+	var node := from_node.get_parent()
+	while node != to_ancestor and node != null:
+		if node is Node3D:
+			xform = (node as Node3D).transform * xform
+		node = node.get_parent()
+	return xform
 
 func _find_meshes(node: Node, out: Array[MeshInstance3D]) -> void:
 	if node is MeshInstance3D:
