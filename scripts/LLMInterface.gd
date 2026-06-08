@@ -17,7 +17,7 @@ var fallback_templates = [
 		"title": "Silicate Brokerage",
 		"faction": "zenith",
 		"agent_name": "Broker Kaelen",
-		"dialogue": "Zenith needs a shipment of silicate ore to rebuild their station shields. They're paying standard rates, but I negotiated a 15% brokerage cut for us. Bring me 30 m³ of ore, and I'll split the profit. I don't work for free, and neither should you.",
+		"dialogue": "Alright, Shiny. Zenith needs a shipment of silicate ore to rebuild their station shields. They're paying standard rates, but I negotiated a 15% brokerage cut for us. Bring me 30 m³ of ore, and we split the profit. Go fetch it.",
 		"objective": {
 			"type": "DELIVER_ORE",
 			"amount_required": 30.0,
@@ -31,7 +31,7 @@ var fallback_templates = [
 					"reputation_change": {"zenith": 3},
 					"combat_multiplier": 1.0,
 					"reward_credits_multiplier": 1.0,
-					"dialogue_response": "Excellent. Make it quick; time is credits."
+					"dialogue_response": "Excellent, Shiny. Make it quick; time is credits."
 				}
 			},
 			{
@@ -41,7 +41,7 @@ var fallback_templates = [
 					"reputation_change": {"zenith": -2},
 					"combat_multiplier": 1.3,
 					"reward_credits_multiplier": 1.2,
-					"dialogue_response": "Taking a bite out of my margins? Fine, credits wired. But I have to route you through a more contested lane to cover my costs. Watch out for Aurelia patrols."
+					"dialogue_response": "Taking a bite out of my margins, Shiny? Fine, credits wired. But I have to route you through a more contested lane to cover my costs. Watch out for Aurelia patrols."
 				}
 			},
 			{
@@ -51,7 +51,7 @@ var fallback_templates = [
 					"reputation_change": {"zenith": -5},
 					"combat_multiplier": 1.7,
 					"reward_credits_multiplier": 1.6,
-					"dialogue_response": "Hustling a hustler? I respect the gall. Payout is bumped, but expect Aurelia interceptors on your tail. Good luck."
+					"dialogue_response": "Hustling a hustler? I respect the gall, Shiny. Payout is bumped, but expect Aurelia interceptors on your tail. Good luck."
 				}
 			}
 		]
@@ -60,7 +60,7 @@ var fallback_templates = [
 		"title": "Thinning the Patrols",
 		"faction": "aurelia",
 		"agent_name": "Broker Kaelen",
-		"dialogue": "An Aurelia smuggler contact wants Zenith's patrol ships thinned out to ease their transport runs. They're paying top credits. Go blow up 3 Zenith ships. I don't care about their war, I just care about the finder's fee. What do you say?",
+		"dialogue": "Listen up, Shiny. An Aurelia smuggler contact wants Zenith's patrol ships thinned out to ease their transport runs. They're paying top credits. Go blow up 3 Zenith ships. I don't care about their war, I just care about my finder's fee. What do you say?",
 		"objective": {
 			"type": "KILL_SHIPS",
 			"target_faction": "zenith",
@@ -75,7 +75,7 @@ var fallback_templates = [
 					"reputation_change": {"zenith": -4, "aurelia": 4},
 					"combat_multiplier": 1.0,
 					"reward_credits_multiplier": 1.0,
-					"dialogue_response": "Splendid. Keep it clean and don't mention my name."
+					"dialogue_response": "Splendid, Shiny. Keep it clean and don't mention my name."
 				}
 			},
 			{
@@ -85,7 +85,7 @@ var fallback_templates = [
 					"reputation_change": {"zenith": -5, "aurelia": -1},
 					"combat_multiplier": 1.3,
 					"reward_credits_multiplier": 1.2,
-					"dialogue_response": "Fine, here's your advance. But don't mess this up; my smuggling client doesn't like loose ends. Expect tougher Zenith escorts."
+					"dialogue_response": "Fine, here's your advance, Shiny. But don't mess this up; my smuggling client doesn't like loose ends. Expect tougher Zenith escorts."
 				}
 			},
 			{
@@ -95,7 +95,7 @@ var fallback_templates = [
 					"reputation_change": {"zenith": -8, "aurelia": 2},
 					"combat_multiplier": 1.6,
 					"reward_credits_multiplier": 1.5,
-					"dialogue_response": "Fair point. Payout is increased, but Zenith patrol command will send interceptors directly after you once you open fire. Watch your back."
+					"dialogue_response": "Fair point, Shiny. Payout is increased, but Zenith patrol command will send interceptors directly after you once you open fire. Watch your back."
 				}
 			}
 		]
@@ -104,7 +104,7 @@ var fallback_templates = [
 		"title": "Aurelia Ore Run",
 		"faction": "aurelia",
 		"agent_name": "Broker Kaelen",
-		"dialogue": "Aurelia scrap merchants need refined silicate for their hull repairs. They pay well, and they don't ask questions. Deliver 20 m³ of ore to my dock. I'll handle the laundering, we both get rich. Simple.",
+		"dialogue": "Aurelia scrap merchants need refined silicate for their hull repairs, Shiny. They pay well, and they don't ask questions. Deliver 20 m³ of ore to my dock. I'll handle the laundering, we both get rich. Simple.",
 		"objective": {
 			"type": "DELIVER_ORE",
 			"amount_required": 20.0,
@@ -118,7 +118,7 @@ var fallback_templates = [
 					"reputation_change": {"aurelia": 3},
 					"combat_multiplier": 1.0,
 					"reward_credits_multiplier": 1.0,
-					"dialogue_response": "Excellent. Keep your scanners peeled while mining."
+					"dialogue_response": "Excellent, Shiny. Keep your scanners peeled while mining."
 				}
 			},
 			{
@@ -128,7 +128,7 @@ var fallback_templates = [
 					"reputation_change": {"aurelia": -1},
 					"combat_multiplier": 1.3,
 					"reward_credits_multiplier": 1.2,
-					"dialogue_response": "Greedy, aren't we? Done. But Vanguard patrols are sweeping the belts today. Keep your lasers cold."
+					"dialogue_response": "Greedy, aren't we, Shiny? Done. But Vanguard patrols are sweeping the belts today. Keep your lasers cold."
 				}
 			},
 			{
@@ -138,7 +138,7 @@ var fallback_templates = [
 					"reputation_change": {"aurelia": -3},
 					"combat_multiplier": 1.6,
 					"reward_credits_multiplier": 1.5,
-					"dialogue_response": "Smuggling tax, right? Payout is up. But Vanguard security forces will be actively scanning cargo holds in the area. Stay alert."
+					"dialogue_response": "Smuggling tax, right, Shiny? Payout is up. But Vanguard security forces will be actively scanning cargo holds in the area. Stay alert."
 				}
 			}
 		]
@@ -147,7 +147,7 @@ var fallback_templates = [
 		"title": "Clearing the Lanes",
 		"faction": "vanguard",
 		"agent_name": "Broker Kaelen",
-		"dialogue": "A Vanguard shipping corp is losing cargo to Aurelia raiders in the belt. They've offered a bounty to clear the lane. Eliminate 4 Aurelia ships. They get their trade route back, I get my broker commission, you get paid. Win-win-win.",
+		"dialogue": "A Vanguard shipping corp is losing cargo to Aurelia raiders in the belt, Shiny. They've offered a bounty to clear the lane. Eliminate 4 Aurelia ships. They get their trade route back, I get my broker commission, you get paid. Win-win-win.",
 		"objective": {
 			"type": "KILL_SHIPS",
 			"target_faction": "aurelia",
@@ -162,7 +162,7 @@ var fallback_templates = [
 					"reputation_change": {"vanguard": 4, "aurelia": -4},
 					"combat_multiplier": 1.0,
 					"reward_credits_multiplier": 1.0,
-					"dialogue_response": "Good. Make sure the lanes are clear."
+					"dialogue_response": "Good, Shiny. Make sure the lanes are clear."
 				}
 			},
 			{
@@ -172,7 +172,7 @@ var fallback_templates = [
 					"reputation_change": {"vanguard": -2, "aurelia": -5},
 					"combat_multiplier": 1.3,
 					"reward_credits_multiplier": 1.2,
-					"dialogue_response": "Expensive tastes. Credits transferred. But the raiders will be hunting in packs now. Be prepared."
+					"dialogue_response": "Expensive tastes, Shiny. Credits transferred. But the raiders will be hunting in packs now. Be prepared."
 				}
 			},
 			{
@@ -182,7 +182,7 @@ var fallback_templates = [
 					"reputation_change": {"vanguard": -4, "aurelia": -8},
 					"combat_multiplier": 1.7,
 					"reward_credits_multiplier": 1.6,
-					"dialogue_response": "Bold play. I'll adjust the contract, but you're going to face Aurelia heavy sentinels out there. Don't get blown to scrap."
+					"dialogue_response": "Bold play, Shiny. I'll adjust the contract, but you're going to face Aurelia heavy sentinels out there. Don't get blown to scrap."
 				}
 			}
 		]
@@ -323,7 +323,8 @@ func request_quest_generation(agent_faction: String, history_text: String, playe
 	var system_prompt = "You are an independent, politically neutral space broker and fixer named Broker Kaelen. " + \
 		"You operate out of a space station and negotiate contracts with all factions (Zenith, Aurelia, Vanguard). " + \
 		"You have no political affiliation. You act purely out of personal profit. You are proud of your greed and broker deals solely to make money. " + \
-		"Your tone is cynical, sharp, opportunistic, and business-focused.\n\n" + \
+		"Your tone is cynical, sharp, opportunistic, and business-focused. " + \
+		"You call the player 'Shiny' as a nickname in your briefings and dialogue responses (treating them like a fresh, unscarred greenhorn, but also a valuable polished tool that makes you credits).\n\n" + \
 		"Current player stats:\n" + \
 		"- Credits: " + str(player_credits) + " SC\n" + \
 		"- Zenith reputation: " + str(player_reps.get("zenith", 50.0)) + "\n" + \
