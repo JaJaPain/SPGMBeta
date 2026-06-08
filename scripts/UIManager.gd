@@ -1089,6 +1089,21 @@ func update_overview_list(entities: Array):
 			type_lbl.clip_text = true
 			hbox.add_child(type_lbl)
 			
+			# Row text colour by entity class
+			# Green = dockable (Space Station and future dockables)
+			# Blue  = celestial bodies (planets, gas giants, etc.)
+			var row_color: Color
+			if type_str == "Space Station":
+				row_color = Color(0.25, 0.95, 0.45)   # Bright docking green
+			elif type_str == "Celestial" or type_str == "Asteroid":
+				row_color = Color(0.35, 0.65, 1.0)    # Soft celestial blue
+			else:
+				row_color = Color(1.0, 1.0, 1.0)      # Default white for ships, wreckage etc.
+			if row_color != Color(1.0, 1.0, 1.0):
+				name_lbl.add_theme_color_override("font_color", row_color)
+				dist_lbl.add_theme_color_override("font_color", row_color)
+				type_lbl.add_theme_color_override("font_color", row_color)
+			
 			# Meta parameters for sorting and updating
 			btn.set_meta("entity_ref", entity)
 			btn.set_meta("entity_name", entity.name)
@@ -1096,6 +1111,7 @@ func update_overview_list(entities: Array):
 			btn.set_meta("distance_val", 0.0) # Updated dynamically in _update_overview_distances
 			btn.set_meta("dist_label_ref", dist_lbl)
 			btn.set_meta("name_label_ref", name_lbl)
+
 
 func _update_overview_distances(delta: float = 999.0):
 	if not GlobalState.player or not is_instance_valid(GlobalState.player): return
@@ -1276,6 +1292,8 @@ func toggle_dock_menu(station: Node3D):
 			GlobalState.player.is_docked = false
 	else:
 		dock_panel.visible = true
+		# Collapse overview while docked — station UI takes priority
+		set_overview_collapsed(true)
 		# Update upgrade buttons prices/labels
 		upgrade_cargo_btn.text = "Upgrade Cargo Hold (+25 m³) - 100 SC"
 		upgrade_laser_btn.text = "Upgrade Mining Laser (+1 yield) - 150 SC"
@@ -1293,9 +1311,12 @@ func undock_player():
 	dock_panel.visible = false
 	agent_panel.visible = false
 	current_station = null
+	# Restore full overview when heading back into space
+	set_overview_collapsed(false)
 	
 	# Stop voice dialogue audio if playing
 	TTSInterface.play_dialogue_audio("")
+	
 	
 	# Give player a slight push away from station
 	if GlobalState.player:
