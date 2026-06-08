@@ -10,6 +10,7 @@ func _ready():
 	
 	http_request = HTTPRequest.new()
 	add_child(http_request)
+	http_request.timeout = 10.0
 	http_request.request_completed.connect(_on_request_completed)
 	
 	audio_player = AudioStreamPlayer.new()
