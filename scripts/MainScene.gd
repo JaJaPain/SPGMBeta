@@ -50,6 +50,13 @@ func _ready():
 	spawn_timer.autostart = true
 	spawn_timer.timeout.connect(_on_npc_spawn_timeout)
 	add_child(spawn_timer)
+	
+	# Show Kaelen's intro popup shortly after the loading screen fades
+	# The loading screen takes ~1.4s to fade out, so 2s puts us safely past it
+	get_tree().create_timer(2.0).timeout.connect(func():
+		if ui_manager and ui_manager.has_method("show_kaelen_intro"):
+			ui_manager.show_kaelen_intro()
+	)
 
 func _spawn_asteroid_ring(center: Vector3, radius: float, width: float, count: int, prefix: String):
 	for i in range(count):

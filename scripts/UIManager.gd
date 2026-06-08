@@ -2162,3 +2162,146 @@ func _on_tts_cache_completed():
 		GlobalState.paused = false # Resume gameplay!
 		print("[TRACE] [UIManager] Loading Screen completed. Game started!")
 	)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# KAELEN INTRO POPUP
+# Called once after the loading screen fades on first entry into the game world.
+# ─────────────────────────────────────────────────────────────────────────────
+
+func show_kaelen_intro():
+	# Kaelen's greeting variations — picked randomly each session
+	var intro_lines = [
+		"Hey, Shiny. Fresh hull, empty wallet — you've got that new-pilot smell. Dock up at the station if you want to change that. I've got contracts that pay.",
+		"Well, well. Another Shiny shows up in my sector. You look lost. Head to the station — I've got work for anyone with a functioning ship and a low survival instinct.",
+		"Shiny. Eyes up. That station on your sensors? That's your new favourite place. Dock in, talk to me, and maybe you won't be flying wreckage by the end of the week.",
+		"New to the system? Good. Inexperienced pilots take the risky jobs nobody else wants. Dock at the station, Shiny. I'll make it worth your while — mostly.",
+		"I don't do charity, Shiny, but I do do introductions. Station's nearby. Dock up, sit down, and let me explain how this sector works before it kills you.",
+		"You've picked an interesting time to show up, Shiny. Lots of factions, lots of credits to be made — if you know who to talk to. That's me. Station. Now.",
+	]
+	
+	var line = intro_lines[randi() % intro_lines.size()]
+	
+	# ── Dim overlay behind the popup ──────────────────────────────────────────
+	var overlay = ColorRect.new()
+	overlay.color = Color(0.0, 0.0, 0.0, 0.55)
+	overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	overlay.mouse_filter = Control.MOUSE_FILTER_STOP
+	add_child(overlay)
+	
+	# ── Main popup panel (matches agent_panel aesthetic) ──────────────────────
+	var popup = Panel.new()
+	popup.set_anchors_preset(Control.PRESET_CENTER)
+	popup.custom_minimum_size = Vector2(680, 260)
+	popup.offset_left   = -340
+	popup.offset_right  =  340
+	popup.offset_top    = -130
+	popup.offset_bottom =  130
+	
+	var style = StyleBoxFlat.new()
+	style.bg_color = Color(0.10, 0.10, 0.13, 1.0)
+	style.border_width_left   = 2
+	style.border_width_top    = 2
+	style.border_width_right  = 2
+	style.border_width_bottom = 2
+	style.border_color = Color(0.0, 0.8, 0.8, 1.0)
+	style.corner_radius_top_left     = 6
+	style.corner_radius_top_right    = 6
+	style.corner_radius_bottom_right = 6
+	style.corner_radius_bottom_left  = 6
+	popup.add_theme_stylebox_override("panel", style)
+	add_child(popup)
+	
+	# ── Layout ───────────────────────────────────────────────────────────────
+	var hbox = HBoxContainer.new()
+	hbox.set_anchors_preset(Control.PRESET_FULL_RECT)
+	hbox.offset_left   = 16
+	hbox.offset_right  = -16
+	hbox.offset_top    = 16
+	hbox.offset_bottom = -16
+	popup.add_child(hbox)
+	
+	# Portrait column
+	var portrait_vbox = VBoxContainer.new()
+	portrait_vbox.custom_minimum_size = Vector2(160, 0)
+	portrait_vbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	hbox.add_child(portrait_vbox)
+	
+	var portrait_rect = TextureRect.new()
+	portrait_rect.custom_minimum_size = Vector2(160, 160)
+	portrait_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	portrait_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	# Load Kaelen's portrait slice (neutral = index 3, row 1 col 1)
+	var atlas = AtlasTexture.new()
+	atlas.atlas = quest_givers_sheet
+	var sheet_size = quest_givers_sheet.get_size()
+	var cell_w = sheet_size.x / 2.0
+	var cell_h = sheet_size.y / 2.0
+	atlas.region = Rect2(cell_w, cell_h, cell_w, cell_h)  # col 1, row 1 = neutral/Kaelen
+	portrait_rect.texture = atlas
+	portrait_vbox.add_child(portrait_rect)
+	
+	# Spacer
+	var gap = Control.new()
+	gap.custom_minimum_size = Vector2(18, 0)
+	hbox.add_child(gap)
+	
+	# Text column
+	var vbox = VBoxContainer.new()
+	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	vbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	hbox.add_child(vbox)
+	
+	var name_lbl = Label.new()
+	name_lbl.text = "BROKER KAELEN"
+	name_lbl.add_theme_color_override("font_color", Color(0.0, 0.9, 0.9))
+	name_lbl.add_theme_font_size_override("font_size", 18)
+	vbox.add_child(name_lbl)
+	
+	var sub_lbl = Label.new()
+	sub_lbl.text = "Neutral Fixer & Profit Broker"
+	sub_lbl.add_theme_font_size_override("font_size", 11)
+	sub_lbl.modulate = Color(0.7, 0.7, 0.7)
+	vbox.add_child(sub_lbl)
+	
+	var spacer = Control.new()
+	spacer.custom_minimum_size = Vector2(0, 10)
+	vbox.add_child(spacer)
+	
+	var dialogue_lbl = Label.new()
+	dialogue_lbl.text = line
+	dialogue_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD
+	dialogue_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	dialogue_lbl.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	vbox.add_child(dialogue_lbl)
+	
+	var spacer2 = Control.new()
+	spacer2.custom_minimum_size = Vector2(0, 10)
+	vbox.add_child(spacer2)
+	
+	var dismiss_btn = Button.new()
+	dismiss_btn.text = "Got it. Heading to the station."
+	dismiss_btn.size_flags_horizontal = Control.SIZE_SHRINK_END
+	vbox.add_child(dismiss_btn)
+	
+	# ── Fade in ───────────────────────────────────────────────────────────────
+	popup.modulate.a = 0.0
+	overlay.modulate.a = 0.0
+	var fade_in = create_tween()
+	fade_in.tween_property(overlay, "modulate:a", 1.0, 0.4)
+	fade_in.parallel().tween_property(popup, "modulate:a", 1.0, 0.4)
+	
+	# ── Dismiss handler ───────────────────────────────────────────────────────
+	var _dismiss = func():
+		var fade_out = create_tween()
+		fade_out.tween_property(popup, "modulate:a", 0.0, 0.35)
+		fade_out.parallel().tween_property(overlay, "modulate:a", 0.0, 0.35)
+		fade_out.tween_callback(func():
+			popup.queue_free()
+			overlay.queue_free()
+		)
+	dismiss_btn.pressed.connect(_dismiss)
+	
+	# ── Play Kaelen's voice ───────────────────────────────────────────────────
+	TTSInterface.play_dialogue_audio(line, "neutral")
+	print("[UIManager] Kaelen intro shown: ", line.left(60), "...")
+
