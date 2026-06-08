@@ -41,6 +41,7 @@ var chat_window_panel: Panel
 var chat_scroll: ScrollContainer
 var chat_vbox: VBoxContainer
 var max_chat_messages: int = 50
+var agent_click_time: float = 0.0
 
 # Preloaded assets
 var quest_givers_sheet = preload("res://assets/QuestGivers.png")
@@ -1601,6 +1602,7 @@ func set_overview_collapsed(collapsed: bool):
 
 # Agent dialogue screen & Quest tracker HUD interactions
 func _on_talk_to_agent_pressed():
+	TTSInterface.start_interaction("Talk to Agent")
 	dock_panel.visible = false
 	agent_panel.visible = true
 	
@@ -1648,6 +1650,12 @@ func _refresh_agent_quest_board():
 	QuestManager.request_new_quest("neutral", _on_quest_generated_received)
 
 func _on_quest_generated_received(quest_data: Dictionary, is_fallback: bool):
+	var now = Time.get_ticks_msec()
+	var elapsed_str = ""
+	if TTSInterface.last_interaction_time > 0.0:
+		elapsed_str = " (Elapsed since '%s': %.3fs)" % [TTSInterface.last_interaction_name, (now - TTSInterface.last_interaction_time) / 1000.0]
+	print("[TRACE] [UIManager] _on_quest_generated_received called%s is_fallback: %s" % [elapsed_str, str(is_fallback)])
+	
 	agent_back_btn.visible = true
 	
 	for child in agent_choices_container.get_children():
@@ -1691,6 +1699,7 @@ func _on_quest_generated_received(quest_data: Dictionary, is_fallback: bool):
 		agent_choices_container.add_child(choice_btn)
 
 func _on_choice_selected(quest_data: Dictionary, choice: Dictionary):
+	TTSInterface.start_interaction("Select Choice: " + choice.get("text", ""))
 	# Clear choices container
 	for child in agent_choices_container.get_children():
 		child.queue_free()
@@ -1719,6 +1728,7 @@ func _on_agent_back_pressed():
 	dock_panel.visible = true
 
 func _on_agent_complete_pressed():
+	TTSInterface.start_interaction("Complete Contract")
 	for child in agent_choices_container.get_children():
 		child.queue_free()
 		
@@ -1729,6 +1739,7 @@ func _on_agent_complete_pressed():
 	agent_back_btn.visible = true
 
 func _on_agent_abandon_pressed():
+	TTSInterface.start_interaction("Abandon Contract")
 	for child in agent_choices_container.get_children():
 		child.queue_free()
 		

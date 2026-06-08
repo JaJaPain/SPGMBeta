@@ -7,6 +7,7 @@ const TIMEOUT_SECONDS = 3.0
 var http_request: HTTPRequest
 var active_callback: Callable
 var is_waiting: bool = false
+var request_start_time: float = 0.0
 
 # Politically neutral, profit-driven fallback templates
 var fallback_templates = [
@@ -248,6 +249,8 @@ func request_quest_generation(agent_faction: String, history_text: String, playe
 	
 	active_callback = callback
 	is_waiting = true
+	request_start_time = Time.get_ticks_msec()
+	print("[TRACE] [LLMInterface] request_quest_generation initiated at: %d ms" % request_start_time)
 	
 	var rand_comp = complications[randi() % complications.size()]
 	
@@ -331,6 +334,9 @@ func request_quest_generation(agent_faction: String, history_text: String, playe
 
 func _on_request_completed(result: int, response_code: int, headers: PackedStringArray, body: PackedByteArray):
 	is_waiting = false
+	var now = Time.get_ticks_msec()
+	var elapsed = (now - request_start_time) / 1000.0
+	print("[TRACE] [LLMInterface] HTTP request completed in %.3fs. Result: %d, Response code: %d at %d ms" % [elapsed, result, response_code, now])
 	if result != HTTPRequest.RESULT_SUCCESS or response_code != 200:
 		print("[LLMInterface] HTTP request failed or timed out. Response code: ", response_code)
 		_trigger_fallback()
@@ -379,7 +385,8 @@ func _on_request_completed(result: int, response_code: int, headers: PackedStrin
 		active_callback.call(quest_data, false)
 
 func _trigger_fallback():
-	print("[LLMInterface] Triggering local procedural fallback quest.")
+	var elapsed = (Time.get_ticks_msec() - request_start_time) / 1000.0
+	print("[TRACE] [LLMInterface] Triggering local procedural fallback quest (Ollama elapsed: %.3fs)." % elapsed)
 	var idx = randi() % fallback_templates.size()
 	var selected_quest = fallback_templates[idx].duplicate(true)
 	

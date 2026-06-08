@@ -4,6 +4,16 @@ const TTS_URL = "http://localhost:5000/tts"
 var http_request: HTTPRequest
 var audio_player: AudioStreamPlayer
 var is_requesting: bool = false
+var tts_request_time: float = 0.0
+
+var last_interaction_time: float = 0.0
+var last_interaction_name: String = ""
+
+func start_interaction(interaction_name: String):
+	last_interaction_time = Time.get_ticks_msec()
+	last_interaction_name = interaction_name
+	print("[TRACE] [TTSInterface] start_interaction: '", interaction_name, "' at system time: ", last_interaction_time, " ms")
+
 
 func _ready():
 	process_mode = Node.PROCESS_MODE_ALWAYS
@@ -20,6 +30,13 @@ func _ready():
 	_check_and_start_tts_server()
 
 func play_dialogue_audio(text: String):
+	tts_request_time = Time.get_ticks_msec()
+	var elapsed_str = ""
+	if last_interaction_time > 0.0:
+		elapsed_str = " (Elapsed since '%s': %.3fs)" % [last_interaction_name, (tts_request_time - last_interaction_time) / 1000.0]
+	print("[TRACE] [TTSInterface] play_dialogue_audio called at: %d ms%s" % [tts_request_time, elapsed_str])
+
+	
 	if is_requesting:
 		http_request.cancel_request()
 		is_requesting = false
@@ -31,6 +48,7 @@ func play_dialogue_audio(text: String):
 	# Clean up meta headers, details, options or empty spaces to avoid reading formatting
 	var clean_text = _clean_dialogue_text(text)
 	if clean_text == "":
+		print("[TRACE] [TTSInterface] Cleaned text is empty, skipping speech.")
 		return
 		
 	is_requesting = true
@@ -61,15 +79,30 @@ func _clean_dialogue_text(text: String) -> String:
 
 func _on_request_completed(result: int, response_code: int, headers: PackedStringArray, body: PackedByteArray):
 	is_requesting = false
+	var now = Time.get_ticks_msec()
+	var elapsed = (now - tts_request_time) / 1000.0
+	var elapsed_str = ""
+	if last_interaction_time > 0.0:
+		elapsed_str = " (Total since '%s': %.3fs)" % [last_interaction_name, (now - last_interaction_time) / 1000.0]
+	print("[TRACE] [TTSInterface] HTTP response received. Time elapsed since request: %.3fs%s. Result: %d Response code: %d" % [elapsed, elapsed_str, result, response_code])
+	
 	if result != HTTPRequest.RESULT_SUCCESS or response_code != 200:
 		print("[TTSInterface] Kokoro TTS request failed. Response code: ", response_code)
 		return
 		
+	var start_decode = Time.get_ticks_msec()
 	var stream = load_wav_from_buffer(body)
+	var decode_elapsed = Time.get_ticks_msec() - start_decode
+	print("[TRACE] [TTSInterface] WAV decoding completed in: ", decode_elapsed, "ms.")
+	
 	if stream:
 		audio_player.stream = stream
 		audio_player.play()
-		print("[TTSInterface] Playing speech audio stream.")
+		var play_now = Time.get_ticks_msec()
+		var total_elapsed_str = ""
+		if last_interaction_time > 0.0:
+			total_elapsed_str = " (Total since '%s': %.3fs)" % [last_interaction_name, (play_now - last_interaction_time) / 1000.0]
+		print("[TRACE] [TTSInterface] Playing speech audio stream. Total time since play_dialogue_audio called: %.3fs%s" % [(play_now - tts_request_time) / 1000.0, total_elapsed_str])
 	else:
 		print("[TTSInterface] Failed to parse WAV buffer from TTS response.")
 
