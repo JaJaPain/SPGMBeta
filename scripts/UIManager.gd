@@ -1040,7 +1040,8 @@ func update_overview_list(entities: Array):
 			hbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
 			
 			var name_lbl = Label.new()
-			name_lbl.text = "  " + entity.name # Add a little padding space
+			var label_text = entity.get("display_name") if entity.get("display_name") else entity.name
+			name_lbl.text = "  " + label_text # Add a little padding space
 			name_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 			name_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE

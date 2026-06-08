@@ -1,4 +1,4 @@
-[gd_scene load_steps=16 format=3]
+[gd_scene load_steps=14 format=3]
 
 
 [ext_resource type="Script" path="res://scripts/MainScene.gd" id="1_script"]
@@ -7,8 +7,6 @@
 [ext_resource type="PackedScene" path="res://scenes/station.tscn" id="4_station"]
 [ext_resource type="PackedScene" path="res://scenes/player_ship.tscn" id="5_player"]
 [ext_resource type="PackedScene" path="res://scenes/ui_manager.tscn" id="6_ui"]
-[ext_resource type="PackedScene" path="res://scenes/outpost_iron_reach.tscn" id="7_outpost1"]
-[ext_resource type="PackedScene" path="res://scenes/outpost_kova.tscn" id="8_outpost2"]
 
 [sub_resource type="Environment" id="Environment_1"]
 background_mode = 1
@@ -83,19 +81,20 @@ shape = SubResource("SphereShape3D_rocky")
 
 [node name="Station" parent="." instance=ExtResource("4_station")]
 transform = Transform3D(5, 0, 0, 0, 5, 0, 0, 0, 5, 0, 0, 180)
-name = "SpaceStation"
 
 [node name="PlayerShip" parent="." instance=ExtResource("5_player")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0)
-name = "PlayerShip"
 
 [node name="CanvasLayer" parent="." instance=ExtResource("6_ui")]
 
-# Iron Reach Outpost — ~1440m from origin, far side of the asteroid belt
-[node name="IronReachOutpost" parent="." instance=ExtResource("7_outpost1")]
+[node name="IronReachOutpost" parent="." instance=ExtResource("4_station")]
 transform = Transform3D(5, 0, 0, 0, 5, 0, 0, 0, 5, 1100, 0, -750)
+display_name = "IRON REACH OUTPOST"
+station_type = "outpost"
+model_path = "res://assets/space_station1.glb"
 
-# Kova Station — ~1350m from origin, opposite quadrant from Iron Reach
-[node name="KovaStation" parent="." instance=ExtResource("8_outpost2")]
+[node name="KovaStation" parent="." instance=ExtResource("4_station")]
 transform = Transform3D(5, 0, 0, 0, 5, 0, 0, 0, 5, -850, 0, -1050)
-
+display_name = "KOVA STATION"
+station_type = "outpost"
+model_path = "res://assets/space_station2.glb"
