@@ -1759,20 +1759,84 @@ func _on_quest_generated_received(quest_data: Dictionary, is_fallback: bool):
 	if quest_data.is_empty():
 		agent_dialogue_label.text = "No contracts available right now. Check back later."
 		return
-		
+	
+	# ── Step 1: Kaelen introduces the quest giver ─────────────────────────────
+	var agent_name = quest_data.get("agent_name", "Broker Kaelen")
+	var faction    = quest_data.get("faction", "neutral")
+	
+	# Per-agent handoff line variations (Kaelen speaking)
+	var handoff_lines: Array = []
+	match agent_name:
+		"Director Voss":
+			handoff_lines = [
+				"Hey Shiny, good timing. Director Voss from Zenith has been asking for a capable pilot. Sit tight — I'll get him.",
+				"Shiny, a word. Zenith's Director Voss has something that needs doing quietly. Let me bring him over.",
+				"You're in luck today, Shiny. Director Voss has a contract that actually pays well. Wait here — I'll fetch him.",
+				"Zenith's been buzzing my comms all morning, Shiny. Director Voss has a job. Hold on while I get him.",
+				"Director Voss wants a word, Shiny. He doesn't like to be kept waiting, so I'll get him now. Try to look competent.",
+			]
+		"Liaison Ryn":
+			handoff_lines = [
+				"Shiny — keep it low key. Liaison Ryn from Aurelia has something off the books. Let me get her for you.",
+				"Quiet down, Shiny. Aurelia's Ryn has a job that doesn't officially exist. Perfect for someone like you. I'll get her.",
+				"Good news, Shiny. Liaison Ryn has work. The kind that pays and asks no questions. Hang on while I fetch her.",
+				"Ryn's been waiting, Shiny. Aurelia doesn't like delays. I'll grab her — just act like you know what you're doing.",
+				"Shiny, you've got Aurelia's attention. Liaison Ryn has a contract. Stay here, I'll bring her over.",
+			]
+		"Captain Dask":
+			handoff_lines = [
+				"Hey Shiny, straighten up. Captain Dask from Vanguard has a mission and he doesn't do small talk. I'll get him.",
+				"Shiny — Vanguard's Captain Dask is looking for a pilot with nerve. That might be you. Let me bring him in.",
+				"Captain Dask has been waiting, Shiny. Vanguard work, military pace. Hold here while I get him.",
+				"Look alive, Shiny. Captain Dask has a contract. He doesn't like excuses, so don't make any. I'll grab him.",
+				"Shiny, Vanguard's on the line. Captain Dask has something that needs handling. Wait here — I'll bring him over.",
+			]
+		_:
+			handoff_lines = [
+				"Hey Shiny, I've got a contact for you. Wait here while I get them.",
+				"Shiny, someone wants a word. Sit tight — I'll grab them.",
+				"I've got just the job for you, Shiny. Give me a second to get my contact.",
+				"Someone's got work for a pilot of your... flexibility, Shiny. One moment.",
+				"Shiny, stay put. I've got a contact who needs a job done. Bringing them over.",
+			]
+	
+	var handoff_line = handoff_lines[randi() % handoff_lines.size()]
+	
+	# Show Kaelen with her handoff intro first
+	agent_name_label.text = "BROKER KAELEN"
+	_update_agent_portrait("neutral")
+	agent_dialogue_label.text = handoff_line
+	agent_back_btn.visible = true
+	
+	# Play Kaelen's intro line in her voice
+	TTSInterface.play_dialogue_audio(handoff_line, "neutral")
+	
+	# Add a "Bring them in" button that transitions to the actual quest giver
+	var bring_in_btn = Button.new()
+	bring_in_btn.text = "[ Bring them in ]"
+	bring_in_btn.pressed.connect(func():
+		# Clear the handoff button
+		for child in agent_choices_container.get_children():
+			child.queue_free()
+		# Transition to the actual quest giver
+		_show_quest_briefing(quest_data, is_fallback)
+	)
+	agent_choices_container.add_child(bring_in_btn)
+
+func _show_quest_briefing(quest_data: Dictionary, is_fallback: bool):
+	# ── Step 2: The quest giver delivers their briefing ───────────────────────
 	var raw_dialogue = quest_data.get("dialogue", "")
 	var display_dialogue = TTSInterface.clean_dialogue_text(raw_dialogue)
 	var note = " [Offline Backup]" if is_fallback else ""
-	agent_dialogue_label.text = display_dialogue + note
+	
 	agent_name_label.text = quest_data.get("agent_name", "Broker Kaelen").to_upper()
-	
-	# Update portrait and logo
 	_update_agent_portrait(quest_data.get("faction", "neutral"))
+	agent_dialogue_label.text = display_dialogue + note
 	
-	# Play briefing voice audio
+	# Play the quest giver's briefing voice
 	TTSInterface.play_dialogue_audio(quest_data.get("dialogue", ""), quest_data.get("faction", "neutral"))
 	
-	# Append client faction details
+	# Append contract details block
 	var f_client = quest_data.get("faction", "neutral").to_upper()
 	var obj = quest_data.get("objective", {})
 	var obj_type = obj.get("type", "UNKNOWN")
@@ -1788,12 +1852,15 @@ func _on_quest_generated_received(quest_data: Dictionary, is_fallback: bool):
 		"Objective: " + amt_info + "\n" + \
 		"Base Reward: " + str(obj.get("reward_credits", 150)) + " SC"
 	
+	# Add player choice buttons
 	var choices = quest_data.get("choices", [])
 	for choice in choices:
 		var choice_btn = Button.new()
 		choice_btn.text = choice.get("text", "Accept Option")
 		choice_btn.pressed.connect(func(): _on_choice_selected(quest_data, choice))
 		agent_choices_container.add_child(choice_btn)
+
+
 
 func _on_choice_selected(quest_data: Dictionary, choice: Dictionary):
 	TTSInterface.start_interaction("Select Choice: " + choice.get("text", ""))
@@ -2304,4 +2371,3 @@ func show_kaelen_intro():
 	# ── Play Kaelen's voice ───────────────────────────────────────────────────
 	TTSInterface.play_dialogue_audio(line, "neutral")
 	print("[UIManager] Kaelen intro shown: ", line.left(60), "...")
-
