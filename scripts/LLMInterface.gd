@@ -9,6 +9,7 @@ var active_callback: Callable
 var is_waiting: bool = false
 var request_start_time: float = 0.0
 var last_history_text: String = ""
+var active_model_name: String = MODEL_NAME
 
 # Politically neutral, profit-driven fallback templates
 var fallback_templates = [
@@ -244,6 +245,67 @@ func _ready():
 	add_child(http_request)
 	http_request.timeout = TIMEOUT_SECONDS
 	http_request.request_completed.connect(_on_request_completed)
+	
+	_discover_ollama_model()
+
+func _discover_ollama_model():
+	var tags_http = HTTPRequest.new()
+	add_child(tags_http)
+	tags_http.timeout = 2.0
+	tags_http.request_completed.connect(func(result, response_code, headers, body):
+		tags_http.queue_free()
+		if result == HTTPRequest.RESULT_SUCCESS and response_code == 200:
+			var json = JSON.new()
+			if json.parse(body.get_string_from_utf8()) == OK:
+				var data = json.get_data()
+				if data is Dictionary and data.has("models"):
+					var models = data["models"]
+					var installed_names = []
+					for m in models:
+						if m is Dictionary and m.has("name"):
+							installed_names.append(m["name"])
+							
+					print("[TRACE] [LLMInterface] Installed Ollama models: ", installed_names)
+					
+					var chosen_model = ""
+					if MODEL_NAME in installed_names:
+						chosen_model = MODEL_NAME
+					elif "qwen2.5:1.5b-instruct" in installed_names:
+						chosen_model = "qwen2.5:1.5b-instruct"
+					elif "qwen2.5:1.5b" in installed_names:
+						chosen_model = "qwen2.5:1.5b"
+					elif "qwen2.5-coder:7b" in installed_names:
+						chosen_model = "qwen2.5-coder:7b"
+					elif "qwen3:8b" in installed_names:
+						chosen_model = "qwen3:8b"
+					elif "gemma4:latest" in installed_names:
+						chosen_model = "gemma4:latest"
+					elif "gemma4:12b" in installed_names:
+						chosen_model = "gemma4:12b"
+					else:
+						for name in installed_names:
+							if "qwen" in name:
+								chosen_model = name
+								break
+						if chosen_model == "":
+							for name in installed_names:
+								if "gemma" in name:
+									chosen_model = name
+									break
+						if chosen_model == "" and installed_names.size() > 0:
+							chosen_model = installed_names[0]
+							
+					if chosen_model != "":
+						active_model_name = chosen_model
+						print("[TRACE] [LLMInterface] Dynamic Ollama model selection: USING '", active_model_name, "'")
+					else:
+						print("[LLMInterface] No models found in Ollama tags. Defaulting to: ", active_model_name)
+	)
+	
+	var err = tags_http.request("http://localhost:11434/api/tags")
+	if err != OK:
+		tags_http.queue_free()
+		print("[LLMInterface] Failed to check Ollama tags endpoint. Defaulting to: ", active_model_name)
 
 func request_quest_generation(agent_faction: String, history_text: String, player_credits: int, player_reps: Dictionary, callback: Callable):
 	if is_waiting:
@@ -320,7 +382,7 @@ func request_quest_generation(agent_faction: String, history_text: String, playe
 		"}"
 	
 	var payload = {
-		"model": MODEL_NAME,
+		"model": active_model_name,
 		"prompt": system_prompt,
 		"stream": false,
 		"format": "json",
@@ -469,7 +531,7 @@ func fetch_chatter_background(type: String):
 		"}"
 		
 	var payload = {
-		"model": MODEL_NAME,
+		"model": active_model_name,
 		"prompt": system_prompt,
 		"stream": false,
 		"format": "json",
@@ -612,7 +674,7 @@ func fetch_salvager_profile(callback: Callable):
 		"}"
 		
 	var payload = {
-		"model": MODEL_NAME,
+		"model": active_model_name,
 		"prompt": prompt,
 		"stream": false,
 		"format": "json",
