@@ -1,0 +1,86 @@
+extends StaticBody3D
+
+## Dockable outpost station using a GLB model.
+## These are repair-only stops — no ore selling, no upgrades, no agent.
+## They serve as quest delivery/pickup locations for future contracts.
+##
+## NOTE: Open the Godot editor once after adding the new GLB files so Godot
+## can import them. Until then, a procedural placeholder mesh is shown.
+
+@export var display_name: String = "Outpost"
+@export var station_type: String = "outpost"   # UIManager reads this to show repair-only UI
+@export var model_path: String = ""            # e.g. "res://assets/space_station1.glb"
+@export var model_scale: float = 5.0           # Adjust per model to match main station size
+
+var _model_loaded: bool = false
+
+func _ready() -> void:
+	add_to_group("station")
+	
+	# Try loading the GLB model (requires editor import to have run first)
+	if model_path != "":
+		var model_scene = load(model_path)
+		if model_scene:
+			var model_instance = model_scene.instantiate()
+			model_instance.scale = Vector3.ONE * model_scale
+			add_child(model_instance)
+			_model_loaded = true
+		else:
+			push_warning("[OutpostStation] GLB not imported yet (%s). Using procedural fallback. Open the Godot editor to import assets." % model_path)
+	
+	# Procedural fallback — visible until the GLB is imported and loaded
+	if not _model_loaded:
+		_build_fallback_mesh()
+	
+	# Collision shape — box approximation, scales with model_scale
+	var col = CollisionShape3D.new()
+	var shape = BoxShape3D.new()
+	shape.size = Vector3(30, 30, 30) * (model_scale / 5.0)
+	col.shape = shape
+	add_child(col)
+
+func _build_fallback_mesh() -> void:
+	# Dark industrial material — distinct from the main station's metallic silver
+	var mat = StandardMaterial3D.new()
+	mat.albedo_color = Color(0.18, 0.22, 0.28)
+	mat.roughness = 0.6
+	mat.metallic = 0.9
+	
+	# Core tower
+	var core_mesh = CylinderMesh.new()
+	core_mesh.top_radius = 3.0
+	core_mesh.bottom_radius = 3.5
+	core_mesh.height = 20.0
+	core_mesh.radial_segments = 12
+	core_mesh.material = mat
+	
+	var core = MeshInstance3D.new()
+	core.mesh = core_mesh
+	core.scale = Vector3.ONE * (model_scale / 5.0)
+	add_child(core)
+	
+	# Docking ring
+	var ring_mesh = TorusMesh.new()
+	ring_mesh.inner_radius = 9.0
+	ring_mesh.outer_radius = 11.0
+	ring_mesh.ring_segments = 24
+	ring_mesh.ring_sides = 6
+	ring_mesh.material = mat
+	
+	var ring_node = MeshInstance3D.new()
+	ring_node.name = "Ring"
+	ring_node.mesh = ring_mesh
+	ring_node.scale = Vector3.ONE * (model_scale / 5.0)
+	add_child(ring_node)
+
+func _physics_process(delta: float) -> void:
+	if GlobalState.paused:
+		return
+	# Gentle slow rotation so the station feels alive in space
+	rotate_y(0.025 * delta)
+
+func dock_player() -> void:
+	var ui = get_node_or_null("../CanvasLayer/UIManager")
+	if ui and ui.has_method("toggle_dock_menu"):
+		ui.toggle_dock_menu(self)
+

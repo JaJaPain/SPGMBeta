@@ -1,0 +1,12 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/OutpostStation.gd" id="1_script"]
+
+[node name="KovaStation" type="StaticBody3D" groups=["station"]]
+collision_layer = 4
+collision_mask = 3
+script = ExtResource("1_script")
+display_name = "KOVA STATION"
+station_type = "outpost"
+model_path = "res://assets/space_station2.glb"
+model_scale = 5.0

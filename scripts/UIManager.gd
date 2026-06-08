@@ -1294,18 +1294,37 @@ func toggle_dock_menu(station: Node3D):
 		dock_panel.visible = true
 		# Collapse overview while docked — station UI takes priority
 		set_overview_collapsed(true)
-		# Update upgrade buttons prices/labels
+		
+		# Determine station capabilities from its type
+		var stype = station.get("station_type") if station else "full_service"
+		var is_outpost = (stype == "outpost")
+		var sname = station.get("display_name") if station and station.get("display_name") else ""
+		
+		if is_outpost:
+			dock_label.text = sname if sname != "" else "OUTPOST SERVICES"
+		else:
+			dock_label.text = "STATION SERVICES"
+		
+		# Show / hide service buttons based on station type
+		sell_btn.visible = not is_outpost
+		upgrade_cargo_btn.visible = not is_outpost
+		upgrade_laser_btn.visible = not is_outpost
+		agent_service_btn.visible = not is_outpost
+		
+		# Update button labels regardless of visibility
 		upgrade_cargo_btn.text = "Upgrade Cargo Hold (+25 m³) - 100 SC"
 		upgrade_laser_btn.text = "Upgrade Mining Laser (+1 yield) - 150 SC"
 		_update_repair_button()
+		
 		if GlobalState.player:
 			GlobalState.player.is_docked = true
 			GlobalState.player.velocity = Vector3.ZERO
-			
-		# Start background quest pre-caching if no active quest and cache is empty
-		if not QuestManager.is_quest_active() and cached_quest_data.is_empty():
+		
+		# Only pre-cache quests when at the main full-service station
+		if not is_outpost and not QuestManager.is_quest_active() and cached_quest_data.is_empty():
 			print("[TRACE] [UIManager] Player docked. Pre-caching agent quest in the background.")
 			QuestManager.request_new_quest("neutral", _on_background_quest_generated)
+
 
 func undock_player():
 	dock_panel.visible = false
