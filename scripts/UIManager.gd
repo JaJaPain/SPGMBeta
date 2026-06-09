@@ -27,6 +27,17 @@ var upgrade_cargo_btn: Button
 var upgrade_laser_btn: Button
 var repair_btn: Button
 var agent_service_btn: Button
+var maintenance_bay_btn: Button
+var back_to_services_btn: Button
+
+# Dock submenu state. Every dockable station (main station, outposts)
+# shows the same two submenus:
+#   "services"     — sell ore, talk to agent, maintenance bay entry
+#   "maintenance"  — repair, upgrade cargo, upgrade laser, back to services
+# Default is "services" so a fresh dock lands on the station's primary
+# offerings. The Grease Monkeys hangar image is shown only in "maintenance".
+enum DockSubmenu { SERVICES, MAINTENANCE }
+var current_submenu: DockSubmenu = DockSubmenu.SERVICES
 
 var agent_panel: Panel
 var agent_name_label: Label
@@ -605,7 +616,17 @@ func _create_dock_menu():
 	agent_service_btn.text = "Talk to Agent"
 	agent_service_btn.pressed.connect(_on_talk_to_agent_pressed)
 	vbox.add_child(agent_service_btn)
-	
+
+	maintenance_bay_btn = Button.new()
+	maintenance_bay_btn.text = "Maintenance Bay (Grease Monkeys)"
+	maintenance_bay_btn.pressed.connect(_on_maintenance_bay_pressed)
+	vbox.add_child(maintenance_bay_btn)
+
+	back_to_services_btn = Button.new()
+	back_to_services_btn.text = "Back to Services"
+	back_to_services_btn.pressed.connect(_on_back_to_services_pressed)
+	vbox.add_child(back_to_services_btn)
+
 	var undock_btn = Button.new()
 	undock_btn.text = "Undock Ship"
 	undock_btn.pressed.connect(undock_player)
@@ -1338,60 +1359,89 @@ func toggle_dock_menu(station: Node3D):
 		dock_panel.visible = true
 		# Collapse overview while docked — station UI takes priority
 		set_overview_collapsed(true)
-		
-		# Determine station capabilities from its type
+
+		# Every dock opens on the SERVICES submenu. The maintenance bay is a
+		# second submenu the player enters via the Maintenance Bay button.
+		current_submenu = DockSubmenu.SERVICES
+
+		# Dock label uses the station's display_name when available, falling
+		# back to a generic header per station type.
 		var stype = station.get("station_type") if station else "full_service"
 		var is_outpost = (stype == "outpost")
-		var is_repair_shop = (stype == "repair_shop")
 		var sname = station.get("display_name") if station and station.get("display_name") else ""
-
-		# Dock label depends on station kind
 		if is_outpost:
 			dock_label.text = sname if sname != "" else "OUTPOST SERVICES"
-		elif is_repair_shop:
-			dock_label.text = sname if sname != "" else "GREASE MONKEYS"
 		else:
-			dock_label.text = "STATION SERVICES"
+			dock_label.text = sname if sname != "" else "STATION SERVICES"
 
-		# Show the themed background only at the repair shop. The image is
-		# loaded lazily so we don't pay the 2MB texture cost on every boot.
-		if dock_background:
-			if is_repair_shop:
-				if dock_background.texture == null:
-					dock_background.texture = load("res://assets/RepairShop.png")
-				dock_background.visible = true
-			else:
-				dock_background.visible = false
-
-		# Service button visibility per station type:
-		#   - main station:        sell ore, talk to agent
-		#   - repair shop:         repair, upgrade cargo, upgrade laser
-		#   - outpost:             (none yet — outposts are visually-present docks with no services)
-		sell_btn.visible = not is_outpost and not is_repair_shop
-		upgrade_cargo_btn.visible = is_repair_shop
-		upgrade_laser_btn.visible = is_repair_shop
-		repair_btn.visible = is_repair_shop
-		agent_service_btn.visible = not is_outpost and not is_repair_shop
-
-		# Update button labels regardless of visibility
-		upgrade_cargo_btn.text = "Upgrade Cargo Hold (+25 m³) - 100 SC"
-		upgrade_laser_btn.text = "Upgrade Mining Laser (+1 yield) - 150 SC"
-		_update_repair_button()
+		_render_dock_submenu()
 
 		if GlobalState.player:
 			GlobalState.player.is_docked = true
 			GlobalState.player.velocity = Vector3.ZERO
 
-		# Only pre-cache quests when at the main full-service station
-		if not is_outpost and not is_repair_shop and not QuestManager.is_quest_active() and cached_quest_data.is_empty():
+		# Pre-cache quests when at a non-outpost station (main station today;
+		# outposts are still visual-only and don't talk to Kaelen).
+		if not is_outpost and not QuestManager.is_quest_active() and cached_quest_data.is_empty():
 			print("[TRACE] [UIManager] Player docked. Pre-caching agent quest in the background.")
 			QuestManager.request_new_quest("neutral", _on_background_quest_generated)
+
+
+# Render the current submenu's button set. Called on dock AND when the
+# player clicks between Services and Maintenance. The Grease Monkeys
+# hangar image shows only while the maintenance submenu is active.
+func _render_dock_submenu() -> void:
+	if current_submenu == DockSubmenu.MAINTENANCE:
+		dock_label.text = "GREASE MONKEYS — MAINTENANCE BAY"
+		# Maintenance submenu: hide services + entry button, show repair +
+		# upgrades + back button. The hangar background stays on.
+		sell_btn.visible = false
+		agent_service_btn.visible = false
+		maintenance_bay_btn.visible = false
+		upgrade_cargo_btn.visible = true
+		upgrade_laser_btn.visible = true
+		repair_btn.visible = true
+		back_to_services_btn.visible = true
+		if dock_background:
+			if dock_background.texture == null:
+				dock_background.texture = load("res://assets/RepairShop.png")
+			dock_background.visible = true
+	else:
+		# Services submenu (default): sell ore, talk to agent, entry button.
+		# Maintenance actions and back button are hidden. Background hidden.
+		sell_btn.visible = true
+		agent_service_btn.visible = true
+		maintenance_bay_btn.visible = true
+		upgrade_cargo_btn.visible = false
+		upgrade_laser_btn.visible = false
+		repair_btn.visible = false
+		back_to_services_btn.visible = false
+		if dock_background:
+			dock_background.visible = false
+
+	# Update button labels + repair state regardless of submenu — keeps
+	# the cost text fresh in case the player swaps submenus while in dock.
+	upgrade_cargo_btn.text = "Upgrade Cargo Hold (+25 m³) - 100 SC"
+	upgrade_laser_btn.text = "Upgrade Mining Laser (+1 yield) - 150 SC"
+	_update_repair_button()
+
+
+func _on_maintenance_bay_pressed() -> void:
+	current_submenu = DockSubmenu.MAINTENANCE
+	_render_dock_submenu()
+
+
+func _on_back_to_services_pressed() -> void:
+	current_submenu = DockSubmenu.SERVICES
+	_render_dock_submenu()
 
 
 func undock_player():
 	dock_panel.visible = false
 	agent_panel.visible = false
 	current_station = null
+	# Reset submenu so the next dock opens on services, not maintenance
+	current_submenu = DockSubmenu.SERVICES
 	# Restore full overview when heading back into space
 	set_overview_collapsed(false)
 	
