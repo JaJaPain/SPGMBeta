@@ -564,8 +564,8 @@ func _create_dock_menu():
 	dock_background.visible = false
 	dock_background.mouse_filter = Control.MOUSE_FILTER_IGNORE  # Don't block button clicks
 	dock_panel.add_child(dock_background)
-	# Move background behind the vbox that holds the buttons
-	dock_background.move_to_front = false
+	# Background is added BEFORE the vbox below, so it naturally renders
+	# behind the buttons in draw order. No move_to_front call needed.
 
 	var vbox = VBoxContainer.new()
 	dock_panel.add_child(vbox)
