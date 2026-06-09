@@ -1,4 +1,4 @@
-[gd_scene load_steps=14 format=3]
+[gd_scene load_steps=15 format=3]
 
 
 [ext_resource type="Script" path="res://scripts/MainScene.gd" id="1_script"]
@@ -7,6 +7,7 @@
 [ext_resource type="PackedScene" path="res://scenes/station.tscn" id="4_station"]
 [ext_resource type="PackedScene" path="res://scenes/player_ship.tscn" id="5_player"]
 [ext_resource type="PackedScene" path="res://scenes/ui_manager.tscn" id="6_ui"]
+[ext_resource type="PackedScene" path="res://scenes/repair_shop.tscn" id="7_repair"]
 
 [sub_resource type="Environment" id="Environment_1"]
 background_mode = 1
@@ -100,3 +101,7 @@ display_name = "KOVA STATION"
 station_type = "outpost"
 model_path = "res://assets/space_station2.glb"
 model_instance_scale = 20.0
+
+[node name="GreaseMonkeys" parent="." instance=ExtResource("7_repair")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2200, 0, 1100)
+

@@ -19,6 +19,9 @@ var collapse_btn: Button
 
 var dock_panel: Panel
 var dock_label: Label
+# Background image for the dock panel — shown only when docked at a
+# repair_shop station, set to RepairShop.png for thematic flavor.
+var dock_background: TextureRect
 var sell_btn: Button
 var upgrade_cargo_btn: Button
 var upgrade_laser_btn: Button
@@ -535,7 +538,35 @@ func _create_dock_menu():
 	dock_panel.offset_right = 0
 	dock_panel.offset_top = 0
 	dock_panel.offset_bottom = 0
-	
+
+	# Dark panel background so the dock menu is readable over busy space backdrops
+	var dock_style = StyleBoxFlat.new()
+	dock_style.bg_color = Color(0.08, 0.08, 0.10, 0.92)
+	dock_style.border_width_left = 2
+	dock_style.border_width_top = 2
+	dock_style.border_width_right = 2
+	dock_style.border_width_bottom = 2
+	dock_style.border_color = Color(0.0, 0.6, 0.6, 1.0)
+	dock_style.corner_radius_top_left = 4
+	dock_style.corner_radius_top_right = 4
+	dock_style.corner_radius_bottom_right = 4
+	dock_style.corner_radius_bottom_left = 4
+	dock_panel.add_theme_stylebox_override("panel", dock_style)
+
+	# Background image (RepairShop.png) — only shown when docked at a repair_shop.
+	# Sized to fill the panel and tinted dark so the foreground buttons stay readable.
+	dock_background = TextureRect.new()
+	dock_background.name = "DockBackground"
+	dock_background.set_anchors_preset(Control.PRESET_FULL_RECT)
+	dock_background.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	dock_background.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	dock_background.modulate = Color(0.35, 0.30, 0.28, 0.65)  # Darken so buttons read on top
+	dock_background.visible = false
+	dock_background.mouse_filter = Control.MOUSE_FILTER_IGNORE  # Don't block button clicks
+	dock_panel.add_child(dock_background)
+	# Move background behind the vbox that holds the buttons
+	dock_background.move_to_front = false
+
 	var vbox = VBoxContainer.new()
 	dock_panel.add_child(vbox)
 	vbox.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -544,7 +575,7 @@ func _create_dock_menu():
 	vbox.offset_top = 0
 	vbox.offset_bottom = 0
 	vbox.alignment = BoxContainer.ALIGNMENT_CENTER
-	
+
 	dock_label = Label.new()
 	dock_label.text = "STATION SERVICES"
 	dock_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -1311,30 +1342,48 @@ func toggle_dock_menu(station: Node3D):
 		# Determine station capabilities from its type
 		var stype = station.get("station_type") if station else "full_service"
 		var is_outpost = (stype == "outpost")
+		var is_repair_shop = (stype == "repair_shop")
 		var sname = station.get("display_name") if station and station.get("display_name") else ""
-		
+
+		# Dock label depends on station kind
 		if is_outpost:
 			dock_label.text = sname if sname != "" else "OUTPOST SERVICES"
+		elif is_repair_shop:
+			dock_label.text = sname if sname != "" else "GREASE MONKEYS"
 		else:
 			dock_label.text = "STATION SERVICES"
-		
-		# Show / hide service buttons based on station type
-		sell_btn.visible = not is_outpost
-		upgrade_cargo_btn.visible = not is_outpost
-		upgrade_laser_btn.visible = not is_outpost
-		agent_service_btn.visible = not is_outpost
-		
+
+		# Show the themed background only at the repair shop. The image is
+		# loaded lazily so we don't pay the 2MB texture cost on every boot.
+		if dock_background:
+			if is_repair_shop:
+				if dock_background.texture == null:
+					dock_background.texture = load("res://assets/RepairShop.png")
+				dock_background.visible = true
+			else:
+				dock_background.visible = false
+
+		# Service button visibility per station type:
+		#   - main station:        sell ore, talk to agent
+		#   - repair shop:         repair, upgrade cargo, upgrade laser
+		#   - outpost:             (none yet — outposts are visually-present docks with no services)
+		sell_btn.visible = not is_outpost and not is_repair_shop
+		upgrade_cargo_btn.visible = is_repair_shop
+		upgrade_laser_btn.visible = is_repair_shop
+		repair_btn.visible = is_repair_shop
+		agent_service_btn.visible = not is_outpost and not is_repair_shop
+
 		# Update button labels regardless of visibility
 		upgrade_cargo_btn.text = "Upgrade Cargo Hold (+25 m³) - 100 SC"
 		upgrade_laser_btn.text = "Upgrade Mining Laser (+1 yield) - 150 SC"
 		_update_repair_button()
-		
+
 		if GlobalState.player:
 			GlobalState.player.is_docked = true
 			GlobalState.player.velocity = Vector3.ZERO
-		
+
 		# Only pre-cache quests when at the main full-service station
-		if not is_outpost and not QuestManager.is_quest_active() and cached_quest_data.is_empty():
+		if not is_outpost and not is_repair_shop and not QuestManager.is_quest_active() and cached_quest_data.is_empty():
 			print("[TRACE] [UIManager] Player docked. Pre-caching agent quest in the background.")
 			QuestManager.request_new_quest("neutral", _on_background_quest_generated)
 
