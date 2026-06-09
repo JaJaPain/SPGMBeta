@@ -62,6 +62,10 @@ var cached_quest_data: Dictionary = {}
 var cached_quest_is_fallback: bool = false
 var is_waiting_for_agent_board: bool = false
 
+# LLM-generated Kaelen handoff line for the currently-cached quest.
+# Empty string means "not yet fetched" or "fetch failed — fall back to canned 5".
+var cached_unique_intro: String = ""
+
 # Dynamic Kaelen reaction lines — unique per quest, generated on acceptance
 var cached_completion_line: String = ""
 var cached_abandon_line: String = ""
@@ -1060,7 +1064,15 @@ func update_overview_list(entities: Array):
 			if entity.is_in_group("asteroid"):
 				type_str = "Asteroid"
 			elif entity.is_in_group("station"):
-				type_str = "Space Station"
+				# Outposts show as "Outpost" so the player can tell them apart
+				# from the main system space station. station_type defaults to
+				# "full_service" on Station.gd, so unspecified stations stay as
+				# "Space Station".
+				var stype = entity.get("station_type") if entity.get("station_type") else "full_service"
+				if stype == "outpost":
+					type_str = "Outpost"
+				else:
+					type_str = "Space Station"
 			elif entity.is_in_group("ship"):
 				var ship_name_upper = entity.name.to_upper()
 				var faction_str = entity.get("faction")
@@ -1091,10 +1103,10 @@ func update_overview_list(entities: Array):
 			hbox.add_child(type_lbl)
 			
 			# Row text colour by entity class
-			# Green = dockable (Space Station and future dockables)
+			# Green = dockable (Space Station / Outpost and future dockables)
 			# Blue  = celestial bodies (planets, gas giants, etc.)
 			var row_color: Color
-			if type_str == "Space Station":
+			if type_str == "Space Station" or type_str == "Outpost":
 				row_color = Color(0.25, 0.95, 0.45)   # Bright docking green
 			elif type_str == "Celestial":
 				row_color = Color(0.35, 0.65, 1.0)    # Soft celestial blue
@@ -1816,6 +1828,7 @@ func _refresh_agent_quest_board():
 func _on_background_quest_generated(quest_data: Dictionary, is_fallback: bool):
 	cached_quest_data = quest_data
 	cached_quest_is_fallback = is_fallback
+	cached_unique_intro = ""  # Reset for new quest — old intro no longer applies
 	print("[TRACE] [UIManager] Background quest generated. Faction: ", quest_data.get("faction", "neutral"), " is_fallback: ", is_fallback)
 	
 	if not quest_data.is_empty():
@@ -1830,6 +1843,26 @@ func _on_background_quest_generated(quest_data: Dictionary, is_fallback: bool):
 			var response = choice.get("consequence", {}).get("dialogue_response", "")
 			if response != "":
 				TTSInterface.cache_dialogue_audio(response, quest_data.get("faction", "neutral"))
+		
+		# Fire-and-forget LLM call for Kaelen's unique handoff intro. Runs in
+		# the background while the player is still docking / loading. If it
+		# doesn't return in time, _on_quest_generated_received falls back to
+		# the canned 5-line array per agent. Skip in fallback mode — there's
+		# no LLM to talk to.
+		if not is_fallback:
+			var agent_name = quest_data.get("agent_name", "Broker Kaelen")
+			var faction = quest_data.get("faction", "neutral")
+			var agent_history = QuestManager.filter_history_for_agent(agent_name, faction)
+			LLMInterface.request_kaelen_intro(quest_data, agent_history, func(unique_line: String):
+				if unique_line.strip_edges() == "":
+					print("[TRACE] [UIManager] No unique intro available — will fall back to canned handoff.")
+					cached_unique_intro = ""
+					return
+				cached_unique_intro = unique_line
+				print("[TRACE] [UIManager] Cached unique Kaelen intro: ", unique_line.left(60), "...")
+				# Pre-cache the TTS so playback is instant when the handoff fires
+				TTSInterface.cache_dialogue_audio(unique_line, "neutral")
+			)
 				
 	# Only push to agent board UI if the player is actually waiting for it
 	# AND no quest is currently active (avoid replacing UI mid-mission)
@@ -1867,43 +1900,21 @@ func _on_quest_generated_received(quest_data: Dictionary, is_fallback: bool):
 	var agent_name = quest_data.get("agent_name", "Broker Kaelen")
 	var faction    = quest_data.get("faction", "neutral")
 	
-	# Per-agent handoff line variations (Kaelen speaking)
-	var handoff_lines: Array = []
-	match agent_name:
-		"Director Voss":
-			handoff_lines = [
-				"Hey Shiny, good timing. Director Voss from Zenith has been asking for a capable pilot. Sit tight — I'll get him.",
-				"Shiny, a word. Zenith's Director Voss has something that needs doing quietly. Let me bring him over.",
-				"You're in luck today, Shiny. Director Voss has a contract that actually pays well. Wait here — I'll fetch him.",
-				"Zenith's been buzzing my comms all morning, Shiny. Director Voss has a job. Hold on while I get him.",
-				"Director Voss wants a word, Shiny. He doesn't like to be kept waiting, so I'll get him now. Try to look competent.",
-			]
-		"Liaison Ryn":
-			handoff_lines = [
-				"Shiny — keep it low key. Liaison Ryn from Aurelia has something off the books. Let me get her for you.",
-				"Quiet down, Shiny. Aurelia's Ryn has a job that doesn't officially exist. Perfect for someone like you. I'll get her.",
-				"Good news, Shiny. Liaison Ryn has work. The kind that pays and asks no questions. Hang on while I fetch her.",
-				"Ryn's been waiting, Shiny. Aurelia doesn't like delays. I'll grab her — just act like you know what you're doing.",
-				"Shiny, you've got Aurelia's attention. Liaison Ryn has a contract. Stay here, I'll bring her over.",
-			]
-		"Captain Dask":
-			handoff_lines = [
-				"Hey Shiny, straighten up. Captain Dask from Vanguard has a mission and he doesn't do small talk. I'll get him.",
-				"Shiny — Vanguard's Captain Dask is looking for a pilot with nerve. That might be you. Let me bring him in.",
-				"Captain Dask has been waiting, Shiny. Vanguard work, military pace. Hold here while I get him.",
-				"Look alive, Shiny. Captain Dask has a contract. He doesn't like excuses, so don't make any. I'll grab him.",
-				"Shiny, Vanguard's on the line. Captain Dask has something that needs handling. Wait here — I'll bring him over.",
-			]
-		_:
-			handoff_lines = [
-				"Hey Shiny, I've got a contact for you. Wait here while I get them.",
-				"Shiny, someone wants a word. Sit tight — I'll grab them.",
-				"I've got just the job for you, Shiny. Give me a second to get my contact.",
-				"Someone's got work for a pilot of your... flexibility, Shiny. One moment.",
-				"Shiny, stay put. I've got a contact who needs a job done. Bringing them over.",
-			]
+	# Per-agent handoff line variations. These are sourced from LLMInterface
+	# so the LLM prompt and the runtime fallback stay in sync — same lines
+	# serve as few-shot examples for the model and as the offline fallback.
+	var handoff_lines: Array = LLMInterface.get_handoff_examples_for_agent(agent_name)
 	
-	var handoff_line = handoff_lines[randi() % handoff_lines.size()]
+	var handoff_line: String
+	if cached_unique_intro.strip_edges() != "":
+		# LLM successfully generated a unique handoff — use it
+		handoff_line = cached_unique_intro
+		print("[TRACE] [UIManager] Using unique LLM-generated handoff for: ", agent_name)
+	else:
+		# No unique intro ready (LLM offline, slow, or this is a fallback quest)
+		# — fall back to one of the canned 5 lines for this agent.
+		handoff_line = handoff_lines[randi() % handoff_lines.size()]
+		print("[TRACE] [UIManager] Using canned handoff fallback for: ", agent_name)
 	
 	# Show Kaelen with her handoff intro first
 	agent_name_label.text = "BROKER KAELEN"

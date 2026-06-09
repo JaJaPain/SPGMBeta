@@ -15,6 +15,7 @@ extends StaticBody3D
 var _model_loaded: bool = false
 
 func _ready() -> void:
+	push_error("[OutpostStation] >>>>>>>>>> _ready() FIRED for: " + str(name) + " display_name=" + display_name + " <<<<<<<<<<")
 	# Group membership (also declared in .tscn but explicit call is belt-and-suspenders)
 	add_to_group("station")
 	

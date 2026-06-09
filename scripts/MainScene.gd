@@ -139,9 +139,46 @@ func _on_npc_spawn_timeout():
 	if GlobalState.destroyed_ships_pool > 0:
 		GlobalState.destroyed_ships_pool -= 1
 		_spawn_npc_flying_in()
+	
+	# Occasional ambient minor faction troublemaker (~15% chance, max 2 alive)
+	var minor_count = _count_minor_faction_ships()
+	if minor_count < 2 and randf() < 0.15:
+		_spawn_minor_faction_ship()
+
+func _count_minor_faction_ships() -> int:
+	var count = 0
+	for entity in GlobalState.active_system_entities:
+		if entity and is_instance_valid(entity) and not entity.get("destroyed"):
+			var fac = entity.get("faction")
+			if fac and GlobalState.is_minor_faction(fac):
+				count += 1
+	return count
+
+func _spawn_minor_faction_ship():
+	var minor_keys = GlobalState.MINOR_FACTIONS.keys()
+	var faction_name = minor_keys[randi() % minor_keys.size()]
+	
+	# Patrol toward planets/belts — NOT the station (they're outlaws)
+	var targets = [gas_giant.global_position, rocky_planet.global_position]
+	var patrol_dest = targets[randi() % targets.size()]
+	
+	# Spawn from deep space
+	var angle = randf() * TAU
+	var spawn_dist = 1100.0
+	var spawn_pos = patrol_dest + Vector3(cos(angle), 0, sin(angle)) * spawn_dist
+	
+	var npc = npc_ship_scene.instantiate()
+	npc.faction = faction_name
+	npc.speed = randf_range(10.0, 14.0)
+	npc.name = faction_name.to_upper() + "_Roaming_" + str(randi() % 1000)
+	add_child(npc)
+	npc.global_position = spawn_pos
+	npc.patrol_center = patrol_dest
+	
+	print("[MainScene] Ambient minor faction spawned: ", npc.name)
 
 func _spawn_npc_flying_in():
-	# Choose a random faction
+	# Choose a random major faction
 	var factions = ["zenith", "aurelia", "vanguard"]
 	var faction_name = factions[randi() % factions.size()]
 	
@@ -166,3 +203,4 @@ func _spawn_npc_flying_in():
 	
 	# Set its patrol center to the destination so it flies in
 	npc.patrol_center = patrol_dest
+

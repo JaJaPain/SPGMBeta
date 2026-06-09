@@ -361,12 +361,12 @@ func _physics_process(delta: float):
 					
 		steer_towards(final_steer_target, delta)
 		
-		var speed = max_speed * GlobalState.speed_mult
+		var speed = max_speed * GlobalState.engine_speed_mult
 		
 		# Proportional speed controller to maintain safe distance from targets
 		if active_target and is_instance_valid(active_target):
 			var dist = global_position.distance_to(active_target.global_position)
-			var speed_limit = max_speed * GlobalState.speed_mult
+			var speed_limit = max_speed * GlobalState.engine_speed_mult
 			
 			if nav_mode == "APPROACH":
 				var target_stop_dist = 60.0

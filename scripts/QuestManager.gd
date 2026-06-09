@@ -44,6 +44,56 @@ func _log_quest_to_file(quest_title: String, quest_type: String, outcome: String
 		f.store_line("- **" + quest_title + "** (" + quest_type + "): " + outcome)
 		f.close()
 
+
+# Returns only the history lines relevant to `agent_name` (e.g. "Director Voss").
+# Since the on-disk history doesn't store agent_name, we filter by the faction
+# the agent speaks for — Zenith=Voss, Aurelia=Ryn, Vanguard=Dask, neutral=Kaelen.
+# This keeps the LLM prompt short and focused on the pilot's relationship with
+# the upcoming quest giver's faction, instead of dumping the whole log.
+# Falls back to a substring search on the quest title if the faction map misses.
+func filter_history_for_agent(agent_name: String, faction: String) -> String:
+	var full = _load_quest_history()
+	if full.strip_edges() == "":
+		return ""
+
+	# Map agent → faction keyword to look for in the quest title (lowercased)
+	var faction_keyword: String = ""
+	match faction.to_lower():
+		"zenith":
+			faction_keyword = "zenith"
+		"aurelia":
+			faction_keyword = "aurelia"
+		"vanguard":
+			faction_keyword = "vanguard"
+		_:
+			# neutral / unknown — treat as "the rest". Return last 5 lines unfiltered
+			# so Kaelen can still reference the pilot's overall track record.
+			var all_lines = full.split("\n")
+			var tail: Array = []
+			for i in range(max(0, all_lines.size() - 5), all_lines.size()):
+				if all_lines[i].strip_edges() != "":
+					tail.append(all_lines[i])
+			return "\n".join(tail)
+
+	# Filter: keep lines that mention the faction keyword OR contain the agent's
+	# name directly (covers edge cases where the LLM uses a unique title).
+	var kept: Array = []
+	for line in full.split("\n"):
+		var lower = line.to_lower()
+		if line.strip_edges() == "":
+			continue
+		if lower.find(faction_keyword) != -1 or lower.find(agent_name.to_lower()) != -1:
+			kept.append(line)
+
+	if kept.is_empty():
+		return ""
+
+	# Cap at the most recent 8 entries to keep the prompt small
+	if kept.size() > 8:
+		kept = kept.slice(kept.size() - 8, kept.size())
+
+	return "\n".join(kept)
+
 func is_quest_active() -> bool:
 	return not active_quest.is_empty()
 
@@ -175,8 +225,39 @@ func abandon_quest():
 func _on_ship_destroyed(faction_name: String):
 	if not is_quest_active():
 		return
-		
+
 	if active_quest["objective_type"] == "KILL_SHIPS" and active_quest["target_faction"] == faction_name:
 		active_quest["current_count"] += 1
 		print("[QuestManager] Quest target killed. Progress: ", active_quest["current_count"], "/", active_quest["count_required"])
 		quest_progress_updated.emit()
+
+		# If a quest ship died and we haven't met count_required yet, spawn
+		# a replacement so the player can still finish the contract. This
+		# covers the case where an NPC killed a target before the player
+		# got to it — previously the quest would become unfinishable.
+		# Debounce 2s so wreckage settles and the spawn point doesn't
+		# overlap the wreck. Capped to never exceed contract size.
+		if active_quest["current_count"] < int(active_quest.get("count_required", 0)):
+			get_tree().create_timer(2.0).timeout.connect(func():
+				# Re-check everything after the debounce — quest may have
+				# been completed, abandoned, or scene-reloaded in the meantime
+				if not is_quest_active():
+					return
+				if active_quest["objective_type"] != "KILL_SHIPS":
+					return
+				if active_quest["target_faction"] != faction_name:
+					return
+				if active_quest["current_count"] >= int(active_quest["count_required"]):
+					return
+				# Count alive quest targets (meta-flagged in spawn_mission_targets)
+				var alive_targets := 0
+				for e in GlobalState.active_system_entities:
+					if e and is_instance_valid(e) and not e.get("destroyed"):
+						if e.is_in_group("ship") and e.get_meta("is_quest_target", false):
+							alive_targets += 1
+				# We want at least one alive target on the field so the
+				# player has something to chase. Spawn if none.
+				if alive_targets == 0:
+					GlobalState.spawn_mission_targets(active_quest["target_faction"], 1)
+					print("[QuestManager] Respawned quest target after NPC kill.")
+			)

@@ -31,6 +31,7 @@ var damage_max: float = 6.5
 var mesh_zenith = preload("res://assets/faction2.glb")
 var mesh_aurelia = preload("res://assets/F1HP.glb")
 var mesh_vanguard = preload("res://assets/faction2.glb")
+var mesh_faction1 = preload("res://assets/faction1.glb")
 
 func _generate_archetype():
 	var roll = randf()
@@ -120,6 +121,27 @@ func _ready():
 
 func _setup_hull():
 	var hull_scene: PackedScene = null
+	
+	# Check if this is a minor faction (data-driven lookup)
+	if GlobalState.is_minor_faction(faction):
+		var fdata = GlobalState.MINOR_FACTIONS[faction]
+		match fdata["model"]:
+			"faction1": hull_scene = mesh_faction1
+			"faction2": hull_scene = mesh_zenith  # faction2.glb
+			"aurelia":  hull_scene = mesh_aurelia
+			_: hull_scene = mesh_faction1
+		if hull_scene:
+			hull_instance = hull_scene.instantiate()
+			visual.add_child(hull_instance)
+			hull_instance.scale = Vector3(6.0, 6.0, 6.0)
+			hull_instance.rotation.y = PI
+			_apply_tint(hull_instance, fdata["tint"])
+			# Setup hardpoints if using the Aurelia model
+			if fdata["model"] == "aurelia":
+				_setup_amarr_hardpoints(hull_instance)
+		return
+	
+	# Major factions
 	match faction:
 		"zenith":
 			hull_scene = mesh_zenith
@@ -131,28 +153,41 @@ func _setup_hull():
 	if hull_scene:
 		hull_instance = hull_scene.instantiate()
 		visual.add_child(hull_instance)
-		
+
 		# Set scale 6.0 and rotation Y 180 degrees (mirroring Ursina logic)
 		hull_instance.scale = Vector3(6.0, 6.0, 6.0)
 		hull_instance.rotation.y = PI
-		
+
 		# Set custom material color for Vanguard
 		if faction == "vanguard":
-			_apply_brown_tint(hull_instance)
-			
+			_apply_tint(hull_instance, Color(0.55, 0.27, 0.07, 1.0))
+
 		# Setup Aurelia weapon hardpoint nodes
 		if faction == "aurelia":
 			_setup_amarr_hardpoints(hull_instance)
+	else:
+		# No matching model found — usually because the LLM hallucinated a
+		# faction name that isn't in MINOR_FACTIONS or the major list. Fall
+		# back to a random existing model so the ship is at least visible
+		# and the player can still engage it. Surface the miss in the console
+		# so it's easy to spot in logs.
+		var fallbacks: Array = [mesh_faction1, mesh_zenith, mesh_aurelia]
+		hull_scene = fallbacks[randi() % fallbacks.size()]
+		push_warning("[NPCShip] Unknown faction '%s' — falling back to random model for visibility." % faction)
+		hull_instance = hull_scene.instantiate()
+		visual.add_child(hull_instance)
+		hull_instance.scale = Vector3(6.0, 6.0, 6.0)
+		hull_instance.rotation.y = PI
 
-func _apply_brown_tint(node: Node):
+func _apply_tint(node: Node, tint_color: Color):
 	if node is MeshInstance3D:
 		var mat = node.get_active_material(0)
 		if mat:
 			var new_mat = mat.duplicate()
-			new_mat.albedo_color = Color(0.55, 0.27, 0.07, 1.0) # Rust/brown
+			new_mat.albedo_color = tint_color
 			node.set_surface_override_material(0, new_mat)
 	for child in node.get_children():
-		_apply_brown_tint(child)
+		_apply_tint(child, tint_color)
 
 func _setup_amarr_hardpoints(node: Node):
 	var gun_names = ["TopRightGun", "BottomRightGun.001", "TopLeftGun", "BottomLeftGun.001"]
@@ -195,9 +230,19 @@ func _physics_process(delta: float):
 			var p = GlobalState.player
 			if p and is_instance_valid(p) and not p.get("destroyed") and not p.get("is_docked"):
 				var is_player_enemy = false
-				if GlobalState.reputations.has(faction) and GlobalState.reputations[faction] < -10.0:
+				
+				# Minor factions are always hostile to the player
+				if GlobalState.is_minor_faction(faction):
 					is_player_enemy = true
-					
+				elif GlobalState.reputations.has(faction) and GlobalState.reputations[faction] < -10.0:
+					is_player_enemy = true
+				
+				# Station safe zone: major factions stand down near station if rep isn't terrible
+				if is_player_enemy and not GlobalState.is_minor_faction(faction):
+					if GlobalState.is_in_safe_zone(global_position):
+						if GlobalState.reputations.get(faction, -100.0) > GlobalState.SAFE_ZONE_REP_THRESHOLD:
+							is_player_enemy = false  # Stand down near station
+				
 				if is_player_enemy:
 					var dist_to_player = global_position.distance_to(p.global_position)
 					if dist_to_player < min_dist:
@@ -275,11 +320,7 @@ func fire():
 			var taunt = LLMInterface.get_chatter_line("hostile_taunt", {
 				"attacker_faction": faction
 			})
-			var fac_color = Color(1.0, 1.0, 1.0)
-			match faction:
-				"zenith": fac_color = Color(1.0, 0.6, 0.1) # Orange
-				"aurelia": fac_color = Color(0.85, 0.2, 0.2) # Red
-				"vanguard": fac_color = Color(0.2, 0.7, 1.0) # Cyan/Blue
+			var fac_color = _get_faction_color()
 			GlobalState.emit_chatter(name, taunt, fac_color)
 	
 	# Determine laser start position
@@ -299,7 +340,9 @@ func fire():
 		p.faction = faction
 		
 		# Projectile color
-		if faction == "zenith":
+		if GlobalState.is_minor_faction(faction):
+			p.color = GlobalState.MINOR_FACTIONS[faction]["projectile"]
+		elif faction == "zenith":
 			p.color = Color.BLUE
 		elif faction == "aurelia":
 			p.color = Color.GOLD
@@ -312,7 +355,7 @@ func fire():
 func take_damage(amount: float, attacker_faction: String = ""):
 	if destroyed: return
 	health -= amount
-	if attacker_faction == "player":
+	if attacker_faction == "player" and not GlobalState.is_minor_faction(faction):
 		GlobalState.adjust_reputation(faction, -2.0) # Aggro drop rep on hit
 		last_attacker_faction = "player"
 		
@@ -349,19 +392,21 @@ func die():
 	if last_attacker_faction == "player":
 		GlobalState.player_credits += 15
 		_apply_reputation_changes()
-		
+
 		# Trigger death cry chatter
 		var cry = LLMInterface.get_chatter_line("death_cry", {
 			"attacker_faction": faction
 		})
-		var fac_color = Color(1.0, 1.0, 1.0)
-		match faction:
-			"zenith": fac_color = Color(1.0, 0.6, 0.1)
-			"aurelia": fac_color = Color(0.85, 0.2, 0.2)
-			"vanguard": fac_color = Color(0.2, 0.7, 1.0)
+		var fac_color = _get_faction_color()
 		GlobalState.emit_chatter(name, cry, fac_color)
-		
+
 		GlobalState.record_kill(faction)
+
+	# Always emit ship_destroyed so quest progress counts NPC kills too.
+	# Previously this only fired inside the player-killed branch (via
+	# record_kill), so an NPC killing a quest target left the quest count
+	# stuck and the contract unfinishable.
+	GlobalState.ship_destroyed.emit(faction)
 	
 	# Remove from entities list
 	GlobalState.active_system_entities.erase(self)
@@ -371,6 +416,10 @@ func die():
 	queue_free()
 
 func _apply_reputation_changes():
+	# Minor factions don't affect reputation when killed
+	if GlobalState.is_minor_faction(faction):
+		return
+	
 	# Decrease reputation with the killed faction
 	GlobalState.adjust_reputation(faction, -20.0)
 	
@@ -383,3 +432,12 @@ func _apply_reputation_changes():
 		"vanguard":
 			GlobalState.adjust_reputation("zenith", 10.0)
 			GlobalState.adjust_reputation("aurelia", 10.0)
+
+func _get_faction_color() -> Color:
+	if GlobalState.is_minor_faction(faction):
+		return GlobalState.MINOR_FACTIONS[faction]["color"]
+	match faction:
+		"zenith": return Color(1.0, 0.6, 0.1)
+		"aurelia": return Color(0.85, 0.2, 0.2)
+		"vanguard": return Color(0.2, 0.7, 1.0)
+	return Color(1.0, 1.0, 1.0)

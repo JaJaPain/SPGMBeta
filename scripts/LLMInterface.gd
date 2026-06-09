@@ -10,6 +10,7 @@ var is_waiting: bool = false
 var request_start_time: float = 0.0
 var last_history_text: String = ""
 var active_model_name: String = MODEL_NAME
+var world_lore_text: String = ""
 
 signal model_discovered(model_name: String)
 signal llm_connection_attempt(attempt: int)
@@ -193,6 +194,94 @@ var fallback_templates = [
 				}
 			}
 		]
+	},
+	{
+		"title": "Reaver Cleanup",
+		"faction": "zenith",
+		"agent_name": "Broker Kaelen",
+		"dialogue": "Reavers have been hitting cargo haulers on the outer belt, Shiny. Zenith wants 3 of them scraped off the lane. Standard bounty work. Clean, quick, and profitable. Get it done.",
+		"objective": {
+			"type": "KILL_SHIPS",
+			"target_faction": "reavers",
+			"count_required": 3,
+			"reward_credits": 180
+		},
+		"choices": [
+			{
+				"text": "Reavers are easy prey. I'll handle it.",
+				"consequence": {
+					"credits_immediate": 0,
+					"reputation_change": {"zenith": 3},
+					"combat_multiplier": 1.0,
+					"reward_credits_multiplier": 1.0,
+					"dialogue_response": "Don't get cocky, Shiny. Reavers fight dirty. But you'll be fine. Probably."
+				}
+			},
+			{
+				"text": "I need ammo credits upfront. 40 should cover it.",
+				"consequence": {
+					"credits_immediate": 40,
+					"reputation_change": {"zenith": -1},
+					"combat_multiplier": 1.3,
+					"reward_credits_multiplier": 1.2,
+					"dialogue_response": "Fine, here's your advance, Shiny. The Reavers have been running heavier ships lately. Don't waste my investment."
+				}
+			},
+			{
+				"text": "Bounty hunting Reavers is dangerous. Pay up or find another gun.",
+				"consequence": {
+					"credits_immediate": 0,
+					"reputation_change": {"zenith": -3},
+					"combat_multiplier": 1.6,
+					"reward_credits_multiplier": 1.5,
+					"dialogue_response": "You drive a hard bargain, Shiny. Contract bumped. But these Reavers are armed to the teeth. Your problem now."
+				}
+			}
+		]
+	},
+	{
+		"title": "Ghost Hunters",
+		"faction": "vanguard",
+		"agent_name": "Broker Kaelen",
+		"dialogue": "Wraith raiders hit a Vanguard supply convoy last cycle, Shiny. Command is furious. They want 2 Wraith ships destroyed as a message. Fast work, decent pay. You in?",
+		"objective": {
+			"type": "KILL_SHIPS",
+			"target_faction": "wraiths",
+			"count_required": 2,
+			"reward_credits": 200
+		},
+		"choices": [
+			{
+				"text": "Wraiths won't know what hit them. Let's go.",
+				"consequence": {
+					"credits_immediate": 0,
+					"reputation_change": {"vanguard": 4},
+					"combat_multiplier": 1.0,
+					"reward_credits_multiplier": 1.0,
+					"dialogue_response": "That's the spirit, Shiny. Wraiths are slippery, so keep your sensors sharp."
+				}
+			},
+			{
+				"text": "Wraiths use jammers. I need 50 credits for countermeasures.",
+				"consequence": {
+					"credits_immediate": 50,
+					"reputation_change": {"vanguard": -1},
+					"combat_multiplier": 1.3,
+					"reward_credits_multiplier": 1.2,
+					"dialogue_response": "Smart, Shiny. Here's the advance. Those Wraith ships have been running tougher loadouts. Stay frosty."
+				}
+			},
+			{
+				"text": "Hunting ghosts isn't cheap. Double it.",
+				"consequence": {
+					"credits_immediate": 0,
+					"reputation_change": {"vanguard": -3},
+					"combat_multiplier": 1.7,
+					"reward_credits_multiplier": 1.6,
+					"dialogue_response": "You've got nerve, Shiny. Payout adjusted. But Wraith command will send their elite interceptors after you. Don't say I didn't warn you."
+				}
+			}
+		]
 	}
 ]
 
@@ -256,12 +345,49 @@ var fallback_completion_lines = [
 ]
 
 var fallback_abandon_lines = [
-	"Contract dumped. You're costing me credit margins, Shiny. I don't forget when people waste my time.",
+	"Contract dumped? You're costing me credit margins. I don't forget when people waste my time.",
 	"Walking away? My client is furious and frankly, so am I. Come back when you've found your nerve.",
 	"Abandoned. You know what that costs me in reputation? Considerably more than it costs you.",
 	"Fine. I'll find someone else who actually finishes what they start. This goes in your file, Shiny.",
 	"Contract voided. My brokerage fee is still owed. Consider that a lesson in commitment."
 ]
+
+# Per-agent handoff lines Kaelen uses to introduce an upcoming quest giver.
+# Used two ways:
+#   1. Runtime fallback when the LLM is offline / slow / returns garbage.
+#   2. Few-shot examples fed to the LLM when requesting a unique intro,
+#      so a small model can pattern-match the voice, structure, and length.
+# Keys must match the `agent_name` field on generated quests (Voss / Ryn / Dask / fallback).
+var fallback_handoff_lines_by_agent: Dictionary = {
+	"Director Voss": [
+		"Hey Shiny, good timing. Director Voss from Zenith has been asking for a capable pilot. Sit tight — I'll get him.",
+		"Shiny, a word. Zenith's Director Voss has something that needs doing quietly. Let me bring him over.",
+		"You're in luck today, Shiny. Director Voss has a contract that actually pays well. Wait here — I'll fetch him.",
+		"Zenith's been buzzing my comms all morning, Shiny. Director Voss has a job. Hold on while I get him.",
+		"Director Voss wants a word, Shiny. He doesn't like to be kept waiting, so I'll get him now. Try to look competent.",
+	],
+	"Liaison Ryn": [
+		"Shiny — keep it low key. Liaison Ryn from Aurelia has something off the books. Let me get her for you.",
+		"Quiet down, Shiny. Aurelia's Ryn has a job that doesn't officially exist. Perfect for someone like you. I'll get her.",
+		"Good news, Shiny. Liaison Ryn has work. The kind that pays and asks no questions. Hang on while I fetch her.",
+		"Ryn's been waiting, Shiny. Aurelia doesn't like delays. I'll grab her — just act like you know what you're doing.",
+		"Shiny, you've got Aurelia's attention. Liaison Ryn has a contract. Stay here, I'll bring her over.",
+	],
+	"Captain Dask": [
+		"Hey Shiny, straighten up. Captain Dask from Vanguard has a mission and he doesn't do small talk. I'll get him.",
+		"Shiny — Vanguard's Captain Dask is looking for a pilot with nerve. That might be you. Let me bring him in.",
+		"Captain Dask has been waiting, Shiny. Vanguard work, military pace. Hold here while I get him.",
+		"Look alive, Shiny. Captain Dask has a contract. He doesn't like excuses, so don't make any. I'll grab him.",
+		"Shiny, Vanguard's on the line. Captain Dask has something that needs handling. Wait here — I'll bring him over.",
+	],
+	"DEFAULT": [
+		"Hey Shiny, I've got a contact for you. Wait here while I get them.",
+		"Shiny, someone wants a word. Sit tight — I'll grab them.",
+		"I've got just the job for you, Shiny. Give me a second to get my contact.",
+		"Someone's got work for a pilot of your... flexibility, Shiny. One moment.",
+		"Shiny, stay put. I've got a contact who needs a job done. Bringing them over.",
+	],
+}
 
 func _ready():
 	randomize()
@@ -270,7 +396,66 @@ func _ready():
 	http_request.timeout = TIMEOUT_SECONDS
 	http_request.request_completed.connect(_on_request_completed)
 	
+	_load_world_lore()
 	_discover_ollama_model()
+
+func _load_world_lore():
+	var lore_path = "res://docs/world_lore.md"
+	if not FileAccess.file_exists(lore_path):
+		print("[LLMInterface] No world lore file found at %s — quests will generate without lore context." % lore_path)
+		return
+	var file = FileAccess.open(lore_path, FileAccess.READ)
+	if file == null:
+		print("[LLMInterface] Failed to open world lore file: %s" % lore_path)
+		return
+	var raw = file.get_as_text()
+	file.close()
+	
+	# Strip HTML comments (the budget guide block) so they don't waste tokens
+	var cleaned = ""
+	var in_comment = false
+	var idx = 0
+	while idx < raw.length():
+		if not in_comment and idx + 3 < raw.length() and raw.substr(idx, 4) == "<!--":
+			in_comment = true
+			idx += 4
+			continue
+		if in_comment and idx + 2 < raw.length() and raw.substr(idx, 3) == "-->":
+			in_comment = false
+			idx += 3
+			continue
+		if not in_comment:
+			cleaned += raw[idx]
+		idx += 1
+	
+	# Strip markdown formatting (headers, bullets, bold) to save tokens
+	var lines = cleaned.split("\n")
+	var stripped_lines = []
+	for line in lines:
+		var s = line.strip_edges()
+		if s == "" or s == "---":
+			continue
+		# Remove markdown header prefixes
+		while s.begins_with("#"):
+			s = s.substr(1)
+		s = s.strip_edges()
+		# Remove leading bullet
+		if s.begins_with("- "):
+			s = s.substr(2)
+		# Remove bold markers
+		s = s.replace("**", "")
+		if s != "":
+			stripped_lines.append(s)
+	
+	world_lore_text = "\n".join(stripped_lines)
+	
+	# Word count warning
+	var word_count = world_lore_text.split(" ", false).size()
+	print("[LLMInterface] World lore loaded: %d words (~%d tokens)." % [word_count, int(word_count * 1.4)])
+	if word_count > 800:
+		print("[LLMInterface] ⚠ WARNING: Lore exceeds 800 words. This WILL cause issues with small models (1.5b-3b). Consider trimming docs/world_lore.md.")
+	elif word_count > 500:
+		print("[LLMInterface] ⚠ CAUTION: Lore is %d words. May slow down small models (1.5b-3b). Fine for 8b+ models." % word_count)
 
 func reset_for_restart():
 	# Clear the active callback FIRST — this is the one that crashes if it fires
@@ -391,7 +576,7 @@ func request_quest_generation(agent_faction: String, history_text: String, playe
 	# Each faction has a distinct named agent, personality, and player nickname
 	var agent_name = "Broker Kaelen"
 	var agent_persona = ""
-	var player_nickname = "Contractor"
+	var player_nickname = "Indy"
 	var agent_role = ""
 	var example_dialogue = ""
 	var example_response_1 = ""
@@ -403,39 +588,39 @@ func request_quest_generation(agent_faction: String, history_text: String, playe
 		"zenith":
 			agent_name = "Director Voss"
 			agent_role = "Zenith Corporate Acquisitions Director"
-			player_nickname = "Contractor"
+			player_nickname = "Indy"
 			agent_persona = "You are Director Voss, a cold, calculating Zenith corporate officer. " + \
 				"You speak in clipped, efficient sentences. You have no patience for failure and treat the pilot as an interchangeable asset. " + \
-				"You refer to the pilot exclusively as 'Contractor'. You never use slang or humor. " + \
+				"You refer to the pilot exclusively as 'Indy'. You never use slang or humor. " + \
 				"You frame all jobs as 'acquisitions', 'operations', or 'directives'. Zenith's interests are paramount."
-			example_dialogue = "Zenith has a resource deficit that requires immediate correction, Contractor. Deliver the required silicate tonnage to the station docking bay. Efficiency is non-negotiable."
-			example_response_1 = "Confirmed, Contractor. Your assignment is logged. Do not deviate from the directive."
+			example_dialogue = "Zenith has a resource deficit that requires immediate correction, Indy. Deliver the required silicate tonnage to the station docking bay. Efficiency is non-negotiable."
+			example_response_1 = "Confirmed, Indy. Your assignment is logged. Do not deviate from the directive."
 			example_response_2 = "An advance against operational expenses. Noted. Your compensation adjustment is processed. Expect elevated patrol resistance on your route."
-			example_response_3 = "Bold negotiation. Zenith respects leverage, Contractor. Payout is revised upward. However, security escalation protocols are now active in your sector."
+			example_response_3 = "Bold negotiation. Zenith respects leverage, Indy. Payout is revised upward. However, security escalation protocols are now active in your sector."
 		"aurelia":
 			agent_name = "Liaison Ryn"
 			agent_role = "Aurelia Syndicate Trade Liaison"
-			player_nickname = "Ghost"
+			player_nickname = "Indy"
 			agent_persona = "You are Liaison Ryn, a smooth-talking, conniving Aurelia syndicate fixer. " + \
 				"You are charming but never fully trustworthy. You speak like someone always running an angle. " + \
-				"You refer to the pilot exclusively as 'Ghost'. You use words like 'clean', 'quiet', 'off the books'. " + \
+				"You refer to the pilot exclusively as 'Indy'. You use words like 'clean', 'quiet', 'off the books'. " + \
 				"Everything is framed as an opportunity, never a risk."
-			example_dialogue = "Aurelia's got a clean job for someone with your skills, Ghost. Quiet, low profile. The syndicate needs those hulls cleared before the next shipment window. Easy credits, no records."
-			example_response_1 = "Smooth. Ghost keeps it clean, that's why I like working with you. Stay off their sensors."
-			example_response_2 = "An advance? Smart move, Ghost. Credits transferred. The Syndicate routes you through a riskier corridor to offset the cost. Stay quiet out there."
-			example_response_3 = "Playing hardball? I respect the hustle, Ghost. Payout bumped. But Aurelia's rivals will be watching the sector. Keep your profile low."
+			example_dialogue = "Aurelia's got a clean job for someone with your skills, Indy. Quiet, low profile. The syndicate needs those hulls cleared before the next shipment window. Easy credits, no records."
+			example_response_1 = "Smooth. Indy keeps it clean, that's why I like working with you. Stay off their sensors."
+			example_response_2 = "An advance? Smart move, Indy. Credits transferred. The Syndicate routes you through a riskier corridor to offset the cost. Stay quiet out there."
+			example_response_3 = "Playing hardball? I respect the hustle, Indy. Payout bumped. But Aurelia's rivals will be watching the sector. Keep your profile low."
 		"vanguard":
 			agent_name = "Captain Dask"
 			agent_role = "Vanguard Military Contract Officer"
-			player_nickname = "Merc"
+			player_nickname = "Indy"
 			agent_persona = "You are Captain Dask, a gruff, no-nonsense Vanguard military contract officer. " + \
 				"You are direct and have zero tolerance for excuses or negotiation theatre. " + \
-				"You refer to the pilot exclusively as 'Merc'. You use military shorthand: 'ROE', 'boots on hull', 'clear the zone'. " + \
+				"You refer to the pilot exclusively as 'Indy'. You use military shorthand: 'ROE', 'boots on hull', 'clear the zone'. " + \
 				"You respect competence and despise weakness."
-			example_dialogue = "Vanguard needs those Aurelia raiders cleared from the shipping lane, Merc. Four contacts, high priority. Take them down and get back to the dock. No theatrics."
-			example_response_1 = "Copy that, Merc. ROE is clear: engage and eliminate. Don't make it complicated."
-			example_response_2 = "You want an advance, Merc? Fine. But Vanguard doesn't cover operational cowardice. Threat level is escalated. Don't embarrass us."
-			example_response_3 = "Renegotiating under fire, Merc. Bold. Payout is adjusted. Don't expect the Vanguard to soften the zone for you."
+			example_dialogue = "Vanguard needs those Aurelia raiders cleared from the shipping lane, Indy. Four contacts, high priority. Take them down and get back to the dock. No theatrics."
+			example_response_1 = "Copy that, Indy. ROE is clear: engage and eliminate. Don't make it complicated."
+			example_response_2 = "You want an advance, Indy? Fine. But Vanguard doesn't cover operational cowardice. Threat level is escalated. Don't embarrass us."
+			example_response_3 = "Renegotiating under fire, Indy. Bold. Payout is adjusted. Don't expect the Vanguard to soften the zone for you."
 		_:
 			agent_name = "Broker Kaelen"
 			agent_role = "Neutral Fixer & Profit Broker"
@@ -466,10 +651,17 @@ func request_quest_generation(agent_faction: String, history_text: String, playe
 			"    \"reward_credits\": 160\n" + \
 			"  },"
 	else:
-		# KILL_SHIPS — pick a kill target that isn't the client faction
-		var kill_targets = ["zenith", "aurelia", "vanguard"]
-		kill_targets.erase(chosen_faction)
-		var kill_target = kill_targets[randi() % kill_targets.size()]
+		# KILL_SHIPS — pick a kill target (90% minor factions, 10% major factions)
+		var kill_target = ""
+		if randf() < 0.9:
+			# 90% chance: target a minor faction
+			var minor_keys = GlobalState.MINOR_FACTIONS.keys()
+			kill_target = minor_keys[randi() % minor_keys.size()]
+		else:
+			# 10% chance: target a major faction (not the client)
+			var major_targets = ["zenith", "aurelia", "vanguard"]
+			major_targets.erase(chosen_faction)
+			kill_target = major_targets[randi() % major_targets.size()]
 		example_title = "Clear the Lane"
 		example_obj_block = \
 			"  \"objective\": {\n" + \
@@ -488,13 +680,23 @@ func request_quest_generation(agent_faction: String, history_text: String, playe
 			"aurelia":
 				example_dialogue = "There's a Vanguard patrol harassing our supply runners, " + player_nickname + ". Four ships. Remove them quietly and I'll make sure the credits flow."
 			"vanguard":
-				example_dialogue = "Zenith is probing our flank again, Merc. Four contacts in the sector. Clear the zone before they can report back."
+				example_dialogue = "Zenith is probing our flank again, Indy. Four contacts in the sector. Clear the zone before they can report back."
 			_:
 				example_dialogue = "Got a hostile problem that needs solving, " + player_nickname + ". A handful of ships that need removing. Standard removal contract."
 
 
 
+	# Build minor faction context string for the LLM
+	var minor_fac_names = GlobalState.MINOR_FACTIONS.keys()
+	var minor_fac_str = ", ".join(minor_fac_names)
+	
+	var lore_block = ""
+	if world_lore_text != "":
+		lore_block = "### WORLD LORE:\n" + world_lore_text + "\n\n"
+	
 	var system_prompt = agent_persona + "\n\n" + \
+		lore_block + \
+		"Minor hostile factions in the sector: " + minor_fac_str + ". These are outlaws with no diplomatic ties — primary targets for elimination contracts.\n\n" + \
 		"Current pilot stats:\n" + \
 		"- Credits: " + str(player_credits) + " SC\n" + \
 		"- Zenith reputation: " + str(player_reps.get("zenith", 50.0)) + "\n" + \
@@ -548,7 +750,8 @@ func request_quest_generation(agent_faction: String, history_text: String, playe
 		"Now generate a COMPLETELY DIFFERENT quest with a unique title and all-new dialogue written in your character's voice. " + \
 		"The faction must be \"" + chosen_faction + "\". The agent_name must be \"" + agent_name + "\". " + \
 		"The objective type in your JSON MUST be '" + chosen_type + "' — do NOT use any other objective type. " + \
-		("For KILL_SHIPS you MUST include 'target_faction' (must NOT equal '" + chosen_faction + "') and 'count_required' (integer 2–6). " if chosen_type == "KILL_SHIPS" else "For DELIVER_ORE you MUST include 'amount_required' (float 20–300). ") + \
+		("For KILL_SHIPS you MUST include 'target_faction' (must NOT equal '" + chosen_faction + "') and 'count_required' (integer 2–4). " if chosen_type == "KILL_SHIPS" else "For DELIVER_ORE you MUST include 'amount_required' (float 20–300). ") + \
+		"Your dialogue MUST state the exact objective number — for kills, mention how many ships; for ore, mention how many m³. " + \
 		"Always call the pilot '" + player_nickname + "' — never use any other nickname. " + \
 		"Output only the raw JSON object."
 	
@@ -622,8 +825,193 @@ func _on_request_completed(result: int, response_code: int, headers: PackedStrin
 		return
 		
 	print("[LLMInterface] LLM Quest successfully generated: ", quest_data["title"])
+	_validate_quest_data(quest_data)
 	if active_callback.is_valid():
 		active_callback.call(quest_data, false)
+
+
+# ── Dialogue ↔ Objective Reconciliation ──────────────────────────────────────
+# The LLM sometimes writes dialogue that mentions different numbers than
+# what it puts in the JSON objective. Since the player reads the dialogue,
+# we treat the dialogue as the source of truth and patch the JSON to match.
+func _validate_quest_data(quest_data: Dictionary):
+	var dialogue = quest_data.get("dialogue", "").to_lower()
+	var obj = quest_data.get("objective", {})
+	var obj_type = obj.get("type", "")
+	
+	# ── Step 1: Detect objective type mismatch ────────────────────────────
+	# Check if the dialogue describes a different mission type than the JSON
+	var dialogue_sounds_like_kill = false
+	var dialogue_sounds_like_ore = false
+	
+	var kill_keywords = ["destroy", "eliminate", "kill", "take out", "take down",
+		"clear", "remove", "neutralize", "engage", "intercept", "wipe out",
+		"blow up", "shoot down", "hostile", "raider", "patrol", "contacts"]
+	var ore_keywords = ["ore", "silicate", "mine", "mining", "deliver", "cargo",
+		"shipment", "haul", "tonnage", "cubic", "m³", "m3"]
+	
+	for kw in kill_keywords:
+		if dialogue.find(kw) != -1:
+			dialogue_sounds_like_kill = true
+			break
+	for kw in ore_keywords:
+		if dialogue.find(kw) != -1:
+			dialogue_sounds_like_ore = true
+			break
+	
+	# If dialogue clearly describes kills but JSON says ore (or vice versa), fix the type
+	if dialogue_sounds_like_kill and not dialogue_sounds_like_ore and obj_type == "DELIVER_ORE":
+		print("[LLMInterface] ⚠ VALIDATE: Dialogue describes KILL mission but JSON says DELIVER_ORE. Patching type.")
+		obj["type"] = "KILL_SHIPS"
+		obj_type = "KILL_SHIPS"
+		# Set sensible defaults if missing
+		if not obj.has("count_required"):
+			obj["count_required"] = 3
+		if not obj.has("target_faction"):
+			var quest_faction = quest_data.get("faction", "zenith")
+			var minor_keys = GlobalState.MINOR_FACTIONS.keys()
+			obj["target_faction"] = minor_keys[randi() % minor_keys.size()]
+		obj.erase("amount_required")
+	elif dialogue_sounds_like_ore and not dialogue_sounds_like_kill and obj_type == "KILL_SHIPS":
+		print("[LLMInterface] ⚠ VALIDATE: Dialogue describes ORE mission but JSON says KILL_SHIPS. Patching type.")
+		obj["type"] = "DELIVER_ORE"
+		obj_type = "DELIVER_ORE"
+		if not obj.has("amount_required"):
+			obj["amount_required"] = 25.0
+		obj.erase("count_required")
+		obj.erase("target_faction")
+	
+	# ── Step 2: Extract numbers from dialogue and reconcile ──────────────
+	if obj_type == "KILL_SHIPS":
+		_reconcile_kill_count(quest_data, dialogue, obj)
+	elif obj_type == "DELIVER_ORE":
+		_reconcile_ore_amount(quest_data, dialogue, obj)
+	
+	# ── Step 3: Clamp to valid ranges ────────────────────────────────────
+	if obj_type == "KILL_SHIPS":
+		var count = int(obj.get("count_required", 3))
+		obj["count_required"] = clampi(count, 2, 4)
+
+		# Validate target_faction is a known faction (minor or major).
+		# If the LLM hallucinated an unknown name (e.g. "synths", "outlaws"),
+		# the ship would spawn with no model. Remap to a random minor
+		# faction so it always renders.
+		var tf = obj.get("target_faction", "")
+		var known_factions = GlobalState.MINOR_FACTIONS.keys()
+		known_factions.append_array(["zenith", "aurelia", "vanguard"])
+		if tf == "" or not tf in known_factions:
+			var minor_keys = GlobalState.MINOR_FACTIONS.keys()
+			var original = tf if tf != "" else "(empty)"
+			obj["target_faction"] = minor_keys[randi() % minor_keys.size()]
+			print("[LLMInterface] ⚠ VALIDATE: Unknown target_faction '%s' remapped to '%s'." % [original, obj["target_faction"]])
+	elif obj_type == "DELIVER_ORE":
+		var amount = float(obj.get("amount_required", 25.0))
+		obj["amount_required"] = clampf(amount, 20.0, 300.0)
+
+func _reconcile_kill_count(quest_data: Dictionary, dialogue: String, obj: Dictionary):
+	# Look for patterns like "3 ships", "kill 4", "destroy 2", "four contacts", etc.
+	var json_count = int(obj.get("count_required", 3))
+	
+	# Number word lookup
+	var word_to_num = {
+		"two": 2, "three": 3, "four": 4, "five": 5, "six": 6,
+		"a couple": 2, "a few": 3, "handful": 3, "several": 4
+	}
+	
+	# Try to find a number near kill-related words
+	var found_count = -1
+	
+	# Pattern: digit followed by ship-related word
+	var ship_words = ["ship", "contact", "target", "vessel", "hostile", "raider",
+		"patrol", "interceptor", "sentinel", "fighter", "bogey", "hull"]
+	
+	# Check digit patterns: "3 ships", "destroy 4", etc.
+	for i in range(dialogue.length()):
+		var c = dialogue[i]
+		if c >= "1" and c <= "9":
+			var digit = int(c)
+			# Check context: is a ship word within 20 chars after this digit?
+			var after = dialogue.substr(i + 1, 25).to_lower()
+			for sw in ship_words:
+				if after.find(sw) != -1:
+					found_count = digit
+					break
+			if found_count != -1:
+				break
+			# Also check if a kill word is within 15 chars BEFORE this digit
+			var before_start = max(0, i - 15)
+			var before = dialogue.substr(before_start, i - before_start).to_lower()
+			var kill_verbs = ["destroy", "eliminate", "kill", "clear", "remove", "engage", "take"]
+			for kv in kill_verbs:
+				if before.find(kv) != -1:
+					found_count = digit
+					break
+			if found_count != -1:
+				break
+	
+	# If digit search failed, check word numbers
+	if found_count == -1:
+		for word in word_to_num:
+			var pos = dialogue.find(word)
+			if pos != -1:
+				# Check if a ship word is nearby
+				var context = dialogue.substr(pos, 30)
+				for sw in ship_words:
+					if context.find(sw) != -1:
+						found_count = word_to_num[word]
+						break
+				if found_count != -1:
+					break
+	
+	if found_count != -1 and found_count != json_count:
+		print("[LLMInterface] ⚠ VALIDATE: Dialogue says %d targets but JSON says count_required=%d. Patching JSON to match dialogue." % [found_count, json_count])
+		obj["count_required"] = found_count
+	elif found_count != -1:
+		print("[LLMInterface] ✓ VALIDATE: Kill count matches — dialogue and JSON both say %d." % json_count)
+	else:
+		print("[LLMInterface] ✓ VALIDATE: No kill count found in dialogue text. Using JSON value: %d." % json_count)
+
+func _reconcile_ore_amount(quest_data: Dictionary, dialogue: String, obj: Dictionary):
+	# Look for patterns like "25 m³", "30 cubic", "deliver 50", "20 tonnes", etc.
+	var json_amount = float(obj.get("amount_required", 25.0))
+	var found_amount = -1.0
+	
+	var ore_context_words = ["m³", "m3", "cubic", "ore", "silicate", "tonne",
+		"metric", "cargo", "shipment", "deliver", "haul"]
+	
+	# Search for number patterns followed by ore-related words
+	# Match multi-digit numbers like 25, 100, 300
+	var i = 0
+	while i < dialogue.length():
+		var c = dialogue[i]
+		if c >= "0" and c <= "9":
+			# Collect the full number
+			var num_str = ""
+			var j = i
+			while j < dialogue.length() and ((dialogue[j] >= "0" and dialogue[j] <= "9") or dialogue[j] == "."):
+				num_str += dialogue[j]
+				j += 1
+			var num_val = float(num_str)
+			# Only consider values in a plausible ore range (10-500)
+			if num_val >= 10.0 and num_val <= 500.0:
+				var after = dialogue.substr(j, 25).to_lower()
+				for ow in ore_context_words:
+					if after.find(ow) != -1:
+						found_amount = num_val
+						break
+			if found_amount > 0:
+				break
+			i = j
+		else:
+			i += 1
+	
+	if found_amount > 0 and absf(found_amount - json_amount) > 1.0:
+		print("[LLMInterface] ⚠ VALIDATE: Dialogue says %.0f m³ but JSON says amount_required=%.0f. Patching JSON to match dialogue." % [found_amount, json_amount])
+		obj["amount_required"] = found_amount
+	elif found_amount > 0:
+		print("[LLMInterface] ✓ VALIDATE: Ore amount matches — dialogue and JSON both say %.0f m³." % json_amount)
+	else:
+		print("[LLMInterface] ✓ VALIDATE: No ore amount found in dialogue text. Using JSON value: %.0f m³." % json_amount)
 
 func _trigger_fallback():
 	var elapsed = (Time.get_ticks_msec() - request_start_time) / 1000.0
@@ -1047,6 +1435,129 @@ func _trigger_kaelen_reaction_fallback(callback: Callable):
 	var comp = fallback_completion_lines[randi() % fallback_completion_lines.size()]
 	var abn = fallback_abandon_lines[randi() % fallback_abandon_lines.size()]
 	callback.call(comp, abn)
+
+
+# Returns the 5 example handoff lines for a given agent name, or the DEFAULT
+# fallback set if the agent isn't in the map. Used both as few-shot examples
+# for the LLM prompt and as the runtime fallback when the LLM is unavailable.
+func get_handoff_examples_for_agent(agent_name: String) -> Array:
+	if fallback_handoff_lines_by_agent.has(agent_name):
+		return fallback_handoff_lines_by_agent[agent_name]
+	return fallback_handoff_lines_by_agent["DEFAULT"]
+
+
+# Generate a unique Kaelen handoff line that introduces the upcoming quest giver.
+# `agent_history_text` is a short filtered list of this pilot's prior contracts
+# with the given quest giver, so the intro can naturally call back to it.
+# If history is empty, Kaelen plays a neutral first-time-intro.
+# Returns a single short line (<= 25 words) to the callback.
+func request_kaelen_intro(quest_data: Dictionary, agent_history_text: String, callback: Callable):
+	var title = quest_data.get("title", "the contract")
+	var faction = quest_data.get("faction", "neutral").capitalize()
+	var agent_name = quest_data.get("agent_name", "Broker Kaelen")
+
+	# Build the few-shot examples block. Numbered for clarity so the model
+	# doesn't try to interpret them as instructions.
+	var examples = get_handoff_examples_for_agent(agent_name)
+	var examples_block = ""
+	for i in range(examples.size()):
+		examples_block += "  %d. \"%s\"\n" % [i + 1, examples[i]]
+
+	# Build the history clause — distinguishes "no track record" from "long history"
+	var history_clause: String
+	if agent_history_text.strip_edges() == "":
+		history_clause = "The pilot has not worked with " + agent_name + " before — write a NEUTRAL first-intro in the same tone as the examples. Do NOT invent prior jobs."
+	else:
+		history_clause = "Here is the pilot's prior history with " + agent_name + ":\n" + agent_history_text + \
+			"\nYou may reference ONE item from this history in a short clause (reliability, payment disputes, a specific past job). Do NOT recap the whole list. Do NOT invent history not listed above."
+
+	var prompt = "You are Broker Kaelen, a cynical, profit-driven, politically neutral space broker who calls the pilot 'Shiny'. " + \
+		"You are about to hand off a client — " + agent_name + " from the " + faction + " faction — and the contract is named '" + title + "'. " + \
+		"\n\n" + \
+		"Here are 5 example handoff lines I already use, one per typical situation:\n" + examples_block + \
+		"\n" + \
+		"YOUR TASK: Write ONE NEW handoff line from Kaelen that follows the EXACT same voice, structure, and length as the examples. Rules:\n" + \
+		"  - First-person. Kaelen is the speaker. NEVER write about her in the third person.\n" + \
+		"  - Direct address to 'Shiny' (or no address — see examples).\n" + \
+		"  - Mention " + agent_name + " by name in the line.\n" + \
+		"  - Under 25 words. One sentence. No line breaks.\n" + \
+		"  - Tone: dry, transactional, faintly condescending, but professional. No poetry, no metaphors, no invented nouns.\n" + \
+		"  - Do NOT copy any example verbatim. Write a genuinely new line.\n" + \
+		"  - Do NOT invent factions, places, ships, jobs, or details not present in the pilot's history or the examples.\n" + \
+		history_clause + "\n" + \
+		"You MUST respond strictly in valid JSON format. Only output the raw JSON object:\n" + \
+		"{\n" + \
+		"  \"intro\": \"[Kaelen's new handoff line]\"\n" + \
+		"}"
+
+	var temp_http = HTTPRequest.new()
+	add_child(temp_http)
+	temp_http.timeout = 8.0  # Tighter than quest gen — intro must be quick
+
+	temp_http.request_completed.connect(func(result, response_code, headers, body):
+		temp_http.queue_free()
+
+		if result != HTTPRequest.RESULT_SUCCESS or response_code != 200:
+			print("[LLMInterface] Kaelen intro fetch failed (network). Caller should fall back.")
+			callback.call("")
+			return
+
+		var response_text = body.get_string_from_utf8()
+		var json = JSON.new()
+		if json.parse(response_text) != OK:
+			print("[LLMInterface] Kaelen intro fetch failed (outer JSON parse). Caller should fall back.")
+			callback.call("")
+			return
+
+		var outer_data = json.get_data()
+		if not outer_data is Dictionary or not outer_data.has("response"):
+			callback.call("")
+			return
+
+		var inner_json_str = outer_data["response"].strip_edges()
+		if inner_json_str.begins_with("```"):
+			var end_idx = inner_json_str.find("\n", 3)
+			if end_idx != -1:
+				inner_json_str = inner_json_str.substr(end_idx + 1)
+			if inner_json_str.ends_with("```"):
+				inner_json_str = inner_json_str.substr(0, inner_json_str.length() - 3)
+			inner_json_str = inner_json_str.strip_edges()
+
+		var inner_json = JSON.new()
+		if inner_json.parse(inner_json_str) != OK:
+			print("[LLMInterface] Kaelen intro fetch failed (inner JSON parse). Caller should fall back.")
+			callback.call("")
+			return
+
+		var intro_data = inner_json.get_data()
+		if intro_data is Dictionary and intro_data.has("intro") and intro_data["intro"] is String:
+			var line: String = intro_data["intro"].strip_edges()
+			if line == "":
+				callback.call("")
+				return
+			print("[LLMInterface] Kaelen unique intro generated for: ", agent_name, " (", title, ")")
+			callback.call(line)
+		else:
+			callback.call("")
+	)
+
+	var payload = {
+		"model": active_model_name,
+		"prompt": prompt,
+		"stream": false,
+		"format": "json",
+		"options": {
+			"temperature": 0.9,
+			"seed": randi()
+		}
+	}
+	var json_str = JSON.stringify(payload)
+	var headers = ["Content-Type: application/json"]
+	var err = temp_http.request(OLLAMA_URL, headers, HTTPClient.METHOD_POST, json_str)
+	if err != OK:
+		temp_http.queue_free()
+		print("[LLMInterface] Kaelen intro fetch failed (request init). Caller should fall back.")
+		callback.call("")
 
 func _trigger_salvager_profile_fallback(callback: Callable):
 	var rand_name = fallback_salvager_names[randi() % fallback_salvager_names.size()]

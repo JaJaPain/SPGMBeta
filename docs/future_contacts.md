@@ -17,7 +17,7 @@ custom lines are written.
 ### 🕵️ The Black Market Contact
 - **Faction:** Stateless / Underworld
 - **Unlocks:** Only appears after player reputation with any faction drops below -50 (burned bridges = criminal work)
-- **Player nickname:** *Cipher*
+- **Player nickname:** *Indy*
 - **Tone:** Cold, transactional, speaks in short clipped sentences. No names, no records.
 - **Kaelen's angle:** Visibly uncomfortable introducing them — she owes them a favour
 - **Example Kaelen intro:** *"Shiny. This one I can't vouch for. But the credits are real. Don't ask questions."*
@@ -28,7 +28,7 @@ custom lines are written.
 ### 🔧 The Salvager Guild Rep
 - **Faction:** Independent (ties to Kira Thorne / salvager NPCs already in game)
 - **Unlocks:** After player completes 3+ DELIVER_ORE missions (shows up as a regular)
-- **Player nickname:** *Scavenger*
+- **Player nickname:** *Indy*
 - **Tone:** Cheerful, pragmatic, talks in salvager slang. Treats every job like a treasure hunt.
 - **Kaelen's angle:** Fond of them — they bring in reliable low-risk contracts
 - **Example Kaelen intro:** *"Oh good timing Shiny, the guild rep's here. Easy work, decent pay. My kind of morning."*
@@ -39,7 +39,7 @@ custom lines are written.
 ### ⭐ The Faction Admiral
 - **Faction:** Zenith / Aurelia / Vanguard (one per faction, unlocks at rep 80+)
 - **Unlocks:** High reputation milestone with that faction — elite pilots only
-- **Player nickname:** *Ace*
+- **Player nickname:** *Indy*
 - **Tone:** Formal, authoritative, treats the player as a proven asset not just a contractor
 - **Kaelen's angle:** Clearly impressed — rare for her — makes a point of it
 - **Example Kaelen intro:** *"Shiny. I don't say this often — this one's a big deal. Admiral's asking for you personally."*
@@ -50,7 +50,7 @@ custom lines are written.
 ### 🃏 The Rival Broker
 - **Faction:** Neutral (competitor to Kaelen)
 - **Unlocks:** Random chance after 10+ quests — Kaelen is forced to sub-contract
-- **Player nickname:** *Asset* (deliberately impersonal — they don't do nicknames)
+- **Player nickname:** *Indy* (deliberately impersonal — they don't do nicknames)
 - **Tone:** Slick, overconfident, subtly undermines Kaelen while being charming to the player
 - **Kaelen's angle:** Barely civil — this one visibly irritates her, great comedy potential
 - **Example Kaelen intro:** *"So. Turns out I owe a colleague a favour. Don't get comfortable with them, Shiny. I'll be taking you back after this."*
