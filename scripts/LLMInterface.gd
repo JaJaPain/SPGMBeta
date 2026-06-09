@@ -3,6 +3,9 @@ extends Node
 const OLLAMA_URL = "http://127.0.0.1:11434/api/generate"
 const MODEL_NAME = "qwen2.5:1.5b-instruct-q4_K_M"
 const TIMEOUT_SECONDS = 15.0
+# Kaelen intro telemetry is written to user://kaelen_intro_stats.json so
+# counters survive game restarts. Read via get_kaelen_intro_stats().
+const _KAELEN_STATS_PATH = "user://kaelen_intro_stats.json"
 
 var http_request: HTTPRequest
 var active_callback: Callable
@@ -11,6 +14,20 @@ var request_start_time: float = 0.0
 var last_history_text: String = ""
 var active_model_name: String = MODEL_NAME
 var world_lore_text: String = ""
+
+# ── Kaelen intro telemetry ────────────────────────────────────────────────────
+# Persistent counters in user://kaelen_intro_stats.json. Tracks how often the
+# speaker-leakage guard fires and how the self-critique retry path is doing
+# across game sessions. Read via get_kaelen_intro_stats(), dumped to console
+# via print_kaelen_intro_stats(). Use reset_kaelen_intro_stats() to clear.
+# Path is in the per-user Godot data dir, so it survives restarts and is
+# separate from the quest history file.
+var _kaelen_intro_attempts: int = 0              # total LLM calls made
+var _kaelen_intro_successes: int = 0             # lines that passed validation
+var _kaelen_intro_rejected_first_try: int = 0    # bad line, triggered a retry
+var _kaelen_intro_rejected_after_retry: int = 0  # bad line on attempt 1, gave up
+var _kaelen_intro_network_failures: int = 0      # HTTP / request init failures
+var _kaelen_intro_parse_failures: int = 0        # outer / inner JSON parse fail
 
 signal model_discovered(model_name: String)
 signal llm_connection_attempt(attempt: int)
@@ -395,7 +412,8 @@ func _ready():
 	add_child(http_request)
 	http_request.timeout = TIMEOUT_SECONDS
 	http_request.request_completed.connect(_on_request_completed)
-	
+
+	_load_kaelen_intro_stats()
 	_load_world_lore()
 	_discover_ollama_model()
 
@@ -1446,6 +1464,162 @@ func get_handoff_examples_for_agent(agent_name: String) -> Array:
 	return fallback_handoff_lines_by_agent["DEFAULT"]
 
 
+# Returns in-memory counters for the Kaelen intro LLM call. Useful for
+# debugging how often the speaker-leakage guard fires and how the
+# self-critique retry path is doing. Reset by calling reset_kaelen_intro_stats().
+func get_kaelen_intro_stats() -> Dictionary:
+	return {
+		"attempts": _kaelen_intro_attempts,
+		"successes": _kaelen_intro_successes,
+		"rejected_first_try": _kaelen_intro_rejected_first_try,
+		"rejected_after_retry": _kaelen_intro_rejected_after_retry,
+		"network_failures": _kaelen_intro_network_failures,
+		"parse_failures": _kaelen_intro_parse_failures,
+	}
+
+func reset_kaelen_intro_stats() -> void:
+	_kaelen_intro_attempts = 0
+	_kaelen_intro_successes = 0
+	_kaelen_intro_rejected_first_try = 0
+	_kaelen_intro_rejected_after_retry = 0
+	_kaelen_intro_network_failures = 0
+	_kaelen_intro_parse_failures = 0
+	_save_kaelen_intro_stats()
+
+
+# Load kaelen intro stats from the per-user JSON file. Called once in _ready.
+# If the file is missing or corrupted, the counters stay at zero.
+func _load_kaelen_intro_stats() -> void:
+	if not FileAccess.file_exists(_KAELEN_STATS_PATH):
+		return
+	var f = FileAccess.open(_KAELEN_STATS_PATH, FileAccess.READ)
+	if f == null:
+		return
+	var raw = f.get_as_text()
+	f.close()
+	var json = JSON.new()
+	if json.parse(raw) != OK:
+		return
+	var data = json.get_data()
+	if not data is Dictionary:
+		return
+	_kaelen_intro_attempts = int(data.get("attempts", 0))
+	_kaelen_intro_successes = int(data.get("successes", 0))
+	_kaelen_intro_rejected_first_try = int(data.get("rejected_first_try", 0))
+	_kaelen_intro_rejected_after_retry = int(data.get("rejected_after_retry", 0))
+	_kaelen_intro_network_failures = int(data.get("network_failures", 0))
+	_kaelen_intro_parse_failures = int(data.get("parse_failures", 0))
+
+
+# Persist the current counters to disk. Called on every increment so a crash
+# doesn't lose the data. Failure to write is logged but never fatal — this
+# is debug telemetry, not gameplay state.
+func _save_kaelen_intro_stats() -> void:
+	var data = {
+		"attempts": _kaelen_intro_attempts,
+		"successes": _kaelen_intro_successes,
+		"rejected_first_try": _kaelen_intro_rejected_first_try,
+		"rejected_after_retry": _kaelen_intro_rejected_after_retry,
+		"network_failures": _kaelen_intro_network_failures,
+		"parse_failures": _kaelen_intro_parse_failures,
+		"last_updated_unix": int(Time.get_unix_time_from_system()),
+	}
+	var f = FileAccess.open(_KAELEN_STATS_PATH, FileAccess.WRITE)
+	if f == null:
+		push_warning("[LLMInterface] Could not write kaelen intro stats to %s" % _KAELEN_STATS_PATH)
+		return
+	f.store_string(JSON.stringify(data))
+	f.close()
+
+
+# Print the kaelen intro stats to the console. Useful to call from the
+# Godot output panel after a play session to see how the speaker-leakage
+# guard and self-critique retry are behaving.
+func print_kaelen_intro_stats() -> void:
+	var s = get_kaelen_intro_stats()
+	print("[LLMInterface] Kaelen intro stats:")
+	print("  attempts:                 ", s["attempts"])
+	print("  successes:                ", s["successes"])
+	print("  rejected_first_try:       ", s["rejected_first_try"], "  (lines that triggered a self-critique retry)")
+	print("  rejected_after_retry:     ", s["rejected_after_retry"], "  (lines that fell back to canned after retry)")
+	print("  network_failures:         ", s["network_failures"])
+	print("  parse_failures:           ", s["parse_failures"])
+	if s["attempts"] > 0:
+		var success_rate = 100.0 * float(s["successes"]) / float(s["attempts"])
+		print("  success_rate:             %.1f%%" % success_rate)
+		var retry_save_rate = 0.0
+		var retries_attempted = s["rejected_first_try"] + s["rejected_after_retry"]
+		if retries_attempted > 0:
+			retry_save_rate = 100.0 * float(s["rejected_first_try"] - s["rejected_after_retry"]) / float(retries_attempted)
+		print("  retry_save_rate:          %.1f%% (of retries that produced an OK line)" % retry_save_rate)
+
+
+# Dump the stats on quit. Godot calls _notification(NOTIFICATION_WM_CLOSE_REQUEST)
+# when the user closes the window, and NOTIFICATION_PREDELETE before the
+# autoload is freed. We save on both so the file is always current.
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_CLOSE_REQUEST or what == NOTIFICATION_PREDELETE:
+		print_kaelen_intro_stats()
+		_save_kaelen_intro_stats()
+
+
+# Build the prompt for the unique Kaelen handoff LLM call.
+# `correction_suffix` is non-empty only on the self-critique retry — it tells
+# the model what it did wrong on the previous attempt so it can course-correct.
+func _build_kaelen_intro_prompt(agent_name: String, faction: String, title: String, examples_block: String, history_clause: String, correction_suffix: String) -> String:
+	return "You are Broker Kaelen. You are the speaker. " + agent_name + " is the OTHER person — the client you are about to bring in. The pilot is 'Shiny'.\n\n" + \
+		"SPEAKER RULE (most important — read carefully):\n" + \
+		"  - YOU are Kaelen. First person. You are talking TO the pilot ('Shiny') about " + agent_name + ".\n" + \
+		"  - You are NOT " + agent_name + ". " + agent_name + " is silent in this line. " + agent_name + " is the one you're introducing.\n" + \
+		"  - NEVER put words in " + agent_name + "'s mouth. If a line you write could be spoken by " + agent_name + " (e.g. 'I'm looking for a pilot...', 'I have a contract...', 'I need...'), DELETE IT and start over.\n" + \
+		"  - Kaelen's lines always frame the OTHER person as the actor ('Director Voss has work', 'Captain Dask is waiting', 'Liaison Ryn has a job').\n\n" + \
+		"Here are 5 example handoff lines from me (Kaelen), one per typical situation:\n" + examples_block + \
+		"\n" + \
+		"YOUR TASK: Write ONE NEW handoff line that follows the EXACT same voice, structure, and length as the examples above. Rules:\n" + \
+		"  - First-person as Kaelen. NEVER about Kaelen in the third person.\n" + \
+		"  - Mention " + agent_name + " by name (third person — the client you're handing off to).\n" + \
+		"  - Address 'Shiny' directly OR start with action framing (see examples).\n" + \
+		"  - Under 25 words. One sentence. No line breaks.\n" + \
+		"  - Tone: dry, transactional, faintly condescending, but professional. No poetry, no metaphors, no invented nouns.\n" + \
+		"  - Do NOT copy any example verbatim. Write a genuinely new line.\n" + \
+		"  - Do NOT invent factions, places, ships, jobs, or details not present in the pilot's history or the examples.\n" + \
+		history_clause + "\n" + \
+		correction_suffix + "\n" + \
+		"You MUST respond strictly in valid JSON format. Only output the raw JSON object:\n" + \
+		"{\n" + \
+		"  \"intro\": \"[Kaelen's new handoff line]\"\n" + \
+		"}"
+
+
+# Validate a generated handoff line against the speaker-leakage rules.
+# Returns "" if the line is OK, or a short reason string if it should be
+# rejected. The reason string doubles as the correction_suffix on the retry.
+func _check_kaelen_intro_speaker(line: String, agent_name: String) -> String:
+	var lower = line.to_lower()
+	var has_shiny = lower.find("shiny") != -1 or lower.find("contractor") != -1 or lower.find("merc") != -1 or lower.find("ghost") != -1
+	var agent_lower = agent_name.to_lower()
+	# Does the line open with the agent's name (with optional punctuation)?
+	var opens_with_agent = lower.begins_with(agent_lower + "?") or lower.begins_with(agent_lower + ".") or lower.begins_with(agent_lower + " ") or lower.begins_with(agent_lower + ",")
+	# If the line opens with the agent AND the agent then speaks first-person,
+	# that's the leak we saw in production.
+	var agent_speaks_first_person = false
+	var after_name_pos = lower.find(agent_lower)
+	if after_name_pos != -1 and after_name_pos < 8:
+		var tail = lower.substr(after_name_pos + agent_lower.length(), 12)
+		if tail.begins_with("? i ") or tail.begins_with(". i ") or tail.begins_with(", i ") or tail.begins_with("? i'") or tail.begins_with(". i'"):
+			agent_speaks_first_person = true
+	if opens_with_agent and agent_speaks_first_person:
+		return "Your previous line had " + agent_name + " speaking as themselves (\"" + line + "\"). Try again, Kaelen only. Mention " + agent_name + " in the THIRD person — they should be silent in your line."
+	# No Shiny-address AND no agent-name reference — model went off the rails.
+	if not has_shiny and not opens_with_agent:
+		return "Your previous line was missing both 'Shiny' and any mention of " + agent_name + ". Try again, Kaelen only, with one or both anchors present."
+	# First-person without pilot-address is the agent speaking as themselves.
+	var has_first_person = lower.begins_with("i am ") or lower.begins_with("i'm ") or lower.find(" i have ") != -1 or lower.find(" i need ") != -1 or lower.find(" i'm looking") != -1
+	if has_first_person and not has_shiny:
+		return "Your previous line used first-person speech without addressing 'Shiny' (\"" + line + "\"). Kaelen always talks TO Shiny, not about herself. Try again."
+	return ""  # OK
+
+
 # Generate a unique Kaelen handoff line that introduces the upcoming quest giver.
 # `agent_history_text` is a short filtered list of this pilot's prior contracts
 # with the given quest giver, so the intro can naturally call back to it.
@@ -1471,24 +1645,18 @@ func request_kaelen_intro(quest_data: Dictionary, agent_history_text: String, ca
 		history_clause = "Here is the pilot's prior history with " + agent_name + ":\n" + agent_history_text + \
 			"\nYou may reference ONE item from this history in a short clause (reliability, payment disputes, a specific past job). Do NOT recap the whole list. Do NOT invent history not listed above."
 
-	var prompt = "You are Broker Kaelen, a cynical, profit-driven, politically neutral space broker who calls the pilot 'Shiny'. " + \
-		"You are about to hand off a client — " + agent_name + " from the " + faction + " faction — and the contract is named '" + title + "'. " + \
-		"\n\n" + \
-		"Here are 5 example handoff lines I already use, one per typical situation:\n" + examples_block + \
-		"\n" + \
-		"YOUR TASK: Write ONE NEW handoff line from Kaelen that follows the EXACT same voice, structure, and length as the examples. Rules:\n" + \
-		"  - First-person. Kaelen is the speaker. NEVER write about her in the third person.\n" + \
-		"  - Direct address to 'Shiny' (or no address — see examples).\n" + \
-		"  - Mention " + agent_name + " by name in the line.\n" + \
-		"  - Under 25 words. One sentence. No line breaks.\n" + \
-		"  - Tone: dry, transactional, faintly condescending, but professional. No poetry, no metaphors, no invented nouns.\n" + \
-		"  - Do NOT copy any example verbatim. Write a genuinely new line.\n" + \
-		"  - Do NOT invent factions, places, ships, jobs, or details not present in the pilot's history or the examples.\n" + \
-		history_clause + "\n" + \
-		"You MUST respond strictly in valid JSON format. Only output the raw JSON object:\n" + \
-		"{\n" + \
-		"  \"intro\": \"[Kaelen's new handoff line]\"\n" + \
-		"}"
+	# First attempt. If the response fails the speaker-leakage guard, we
+	# retry ONCE with a correction suffix that tells the model what it did
+	# wrong. After that, we hard-fall-back to canned (caller picks from
+	# fallback_handoff_lines_by_agent).
+	_kaelen_intro_request_attempt(agent_name, title, faction, examples_block, history_clause, "", 0, callback)
+
+
+# Internal: make one LLM call for the handoff intro. `attempt` is 0 on the
+# first try, 1 on the self-critique retry. Total cap is 2 attempts — beyond
+# that the caller falls back to a canned line.
+func _kaelen_intro_request_attempt(agent_name: String, title: String, faction: String, examples_block: String, history_clause: String, correction_suffix: String, attempt: int, original_callback: Callable):
+	var prompt = _build_kaelen_intro_prompt(agent_name, faction, title, examples_block, history_clause, correction_suffix)
 
 	var temp_http = HTTPRequest.new()
 	add_child(temp_http)
@@ -1498,20 +1666,26 @@ func request_kaelen_intro(quest_data: Dictionary, agent_history_text: String, ca
 		temp_http.queue_free()
 
 		if result != HTTPRequest.RESULT_SUCCESS or response_code != 200:
+			_kaelen_intro_network_failures += 1
+			_save_kaelen_intro_stats()
 			print("[LLMInterface] Kaelen intro fetch failed (network). Caller should fall back.")
-			callback.call("")
+			original_callback.call("")
 			return
 
 		var response_text = body.get_string_from_utf8()
 		var json = JSON.new()
 		if json.parse(response_text) != OK:
+			_kaelen_intro_parse_failures += 1
+			_save_kaelen_intro_stats()
 			print("[LLMInterface] Kaelen intro fetch failed (outer JSON parse). Caller should fall back.")
-			callback.call("")
+			original_callback.call("")
 			return
 
 		var outer_data = json.get_data()
 		if not outer_data is Dictionary or not outer_data.has("response"):
-			callback.call("")
+			_kaelen_intro_parse_failures += 1
+			_save_kaelen_intro_stats()
+			original_callback.call("")
 			return
 
 		var inner_json_str = outer_data["response"].strip_edges()
@@ -1525,22 +1699,57 @@ func request_kaelen_intro(quest_data: Dictionary, agent_history_text: String, ca
 
 		var inner_json = JSON.new()
 		if inner_json.parse(inner_json_str) != OK:
+			_kaelen_intro_parse_failures += 1
+			_save_kaelen_intro_stats()
 			print("[LLMInterface] Kaelen intro fetch failed (inner JSON parse). Caller should fall back.")
-			callback.call("")
+			original_callback.call("")
 			return
 
 		var intro_data = inner_json.get_data()
-		if intro_data is Dictionary and intro_data.has("intro") and intro_data["intro"] is String:
-			var line: String = intro_data["intro"].strip_edges()
-			if line == "":
-				callback.call("")
+		if not (intro_data is Dictionary and intro_data.has("intro") and intro_data["intro"] is String):
+			_kaelen_intro_parse_failures += 1
+			_save_kaelen_intro_stats()
+			original_callback.call("")
+			return
+
+		var line: String = intro_data["intro"].strip_edges()
+		if line == "":
+			original_callback.call("")
+			return
+
+		# ── Speaker-leakage guard ──────────────────────────────────────────
+		# Defense in depth against the LLM slipping into the wrong voice
+		# (e.g. producing a line where Captain Dask is the speaker instead
+		# of Kaelen). The prompt asks the model to stay as Kaelen, but a
+		# small model (1.5b) sometimes pattern-matches the *content* of
+		# the few-shot examples rather than the *speaker*. We catch the
+		# common failure shapes here. If the line fails, we retry ONCE
+		# with a self-critique suffix (capped at attempt=1) so the model
+		# can see what it did wrong and try again.
+		var rejection_reason = _check_kaelen_intro_speaker(line, agent_name)
+		if rejection_reason != "":
+			print("[LLMInterface] ⚠ Kaelen intro attempt ", attempt, " REJECTED: ", rejection_reason, " Line was: \"", line, "\"")
+			if attempt >= 1:
+				# Already retried once. Give up — caller falls back to canned.
+				_kaelen_intro_rejected_after_retry += 1
+				_save_kaelen_intro_stats()
+				print("[LLMInterface] Kaelen intro: giving up after retry. Caller should fall back.")
+				original_callback.call("")
 				return
-			print("[LLMInterface] Kaelen unique intro generated for: ", agent_name, " (", title, ")")
-			callback.call(line)
-		else:
-			callback.call("")
+			_kaelen_intro_rejected_first_try += 1
+			# Build a correction suffix from the rejection reason and retry.
+			var new_suffix = "SELF-CRITIQUE — your previous attempt was rejected. Reason: " + rejection_reason
+			print("[LLMInterface] Kaelen intro: retrying with self-critique correction...")
+			_kaelen_intro_request_attempt(agent_name, title, faction, examples_block, history_clause, new_suffix, attempt + 1, original_callback)
+			return
+
+		_kaelen_intro_successes += 1
+		_save_kaelen_intro_stats()
+		print("[LLMInterface] Kaelen unique intro generated for: ", agent_name, " (", title, "): ", line)
+		original_callback.call(line)
 	)
 
+	_kaelen_intro_attempts += 1
 	var payload = {
 		"model": active_model_name,
 		"prompt": prompt,
@@ -1556,8 +1765,10 @@ func request_kaelen_intro(quest_data: Dictionary, agent_history_text: String, ca
 	var err = temp_http.request(OLLAMA_URL, headers, HTTPClient.METHOD_POST, json_str)
 	if err != OK:
 		temp_http.queue_free()
+		_kaelen_intro_network_failures += 1
+		_save_kaelen_intro_stats()
 		print("[LLMInterface] Kaelen intro fetch failed (request init). Caller should fall back.")
-		callback.call("")
+		original_callback.call("")
 
 func _trigger_salvager_profile_fallback(callback: Callable):
 	var rand_name = fallback_salvager_names[randi() % fallback_salvager_names.size()]
