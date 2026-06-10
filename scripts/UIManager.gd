@@ -1356,14 +1356,22 @@ func _on_credits_changed(new_credits: int):
 
 func _on_cargo_changed(new_cargo: float):
 	if cargo_label and cargo_bar:
-		cargo_label.text = "Cargo: " + str(int(new_cargo)) + " / " + str(int(GlobalState.cargo_max)) + " m³"
+		cargo_label.text = "Cargo: " + GlobalState.cargo_display_text()
 		cargo_bar.max_value = GlobalState.cargo_max
-		cargo_bar.value = new_cargo
-		
-		# Play audio warning when cargo reaches max capacity
-		if new_cargo >= GlobalState.cargo_max:
+		# Bar visual: ore fill when carrying ore, "full" when carrying a
+		# special item (so the player sees something is loaded), 0 when empty.
+		match GlobalState.cargo_type:
+			GlobalState.CargoType.ORE:
+				cargo_bar.value = new_cargo
+			GlobalState.CargoType.SPECIAL:
+				cargo_bar.value = GlobalState.cargo_max
+			_:
+				cargo_bar.value = 0.0
+
+		# Play audio warning when ore cargo reaches max capacity
+		if GlobalState.cargo_type == GlobalState.CargoType.ORE and new_cargo >= GlobalState.cargo_max:
 			AudioManager.play_cargo_full()
-			
+
 		_update_quest_tracker()
 
 func _on_pause_changed(is_paused: bool):
@@ -1484,10 +1492,10 @@ func undock_player():
 		GlobalState.player.nav_mode = "MANUAL"
 
 func _sell_ore():
-	if GlobalState.cargo > 0.0:
+	if GlobalState.cargo_type == GlobalState.CargoType.ORE and GlobalState.cargo > 0.0:
 		var earnings = int(GlobalState.cargo)
 		GlobalState.player_credits += earnings
-		GlobalState.cargo = 0.0
+		GlobalState.clear_cargo()
 		_update_repair_button()
 		AudioManager.play_sell_ore()
 
@@ -1930,7 +1938,7 @@ func _on_talk_to_agent_pressed():
 		agent_choices_container.add_child(comp_btn)
 		
 		# Partial shipment button — ore quests only, when player has cargo but isn't done yet
-		if q["objective_type"] == "DELIVER_ORE" and GlobalState.cargo > 0.5 and not QuestManager.is_quest_completed():
+		if q["objective_type"] == "DELIVER_ORE" and GlobalState.cargo_type == GlobalState.CargoType.ORE and GlobalState.cargo > 0.5 and not QuestManager.is_quest_completed():
 			var banked = q.get("partial_delivered", 0.0)
 			var remaining = q["amount_required"] - banked
 			var deliverable = min(GlobalState.cargo, remaining)
@@ -2312,7 +2320,9 @@ func _update_quest_tracker():
 		quest_tracker_progress.text = "Kills: " + str(q["current_count"]) + " / " + str(q["count_required"]) + " (" + q["target_faction"].to_upper() + ")"
 	elif q["objective_type"] == "DELIVER_ORE":
 		var banked = q.get("partial_delivered", 0.0)
-		var in_hold = GlobalState.cargo
+		# Only count in-hold cargo if we're actually carrying ore (not a
+		# special item — that doesn't count toward ore delivery progress).
+		var in_hold = GlobalState.cargo if GlobalState.cargo_type == GlobalState.CargoType.ORE else 0.0
 		var required = q["amount_required"]
 		var total_so_far = banked + in_hold
 		quest_tracker_progress.text = "Ore: %.0f / %.0f m³" % [total_so_far, required]

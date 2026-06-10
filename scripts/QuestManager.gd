@@ -105,9 +105,12 @@ func is_quest_completed() -> bool:
 	if type == "KILL_SHIPS":
 		return active_quest["current_count"] >= active_quest["count_required"]
 	elif type == "DELIVER_ORE":
-		# Count already-banked ore plus what's currently in the hold
+		# Count already-banked ore plus what's currently in the hold.
+		# Only count in-hold ore if the hold is actually carrying ore
+		# (a special-cargo load doesn't count toward ore progress).
 		var banked = active_quest.get("partial_delivered", 0.0)
-		return (banked + GlobalState.cargo) >= active_quest["amount_required"]
+		var in_hold = GlobalState.cargo if GlobalState.cargo_type == GlobalState.CargoType.ORE else 0.0
+		return (banked + in_hold) >= active_quest["amount_required"]
 		
 	return false
 
@@ -171,12 +174,14 @@ func accept_quest(quest_data: Dictionary, selected_choice: Dictionary):
 func deliver_partial(amount: float) -> float:
 	if not is_quest_active() or active_quest["objective_type"] != "DELIVER_ORE":
 		return 0.0
+	if GlobalState.cargo_type != GlobalState.CargoType.ORE:
+		return 0.0
 	var remaining = active_quest["amount_required"] - active_quest.get("partial_delivered", 0.0)
 	var to_deliver = min(amount, remaining, GlobalState.cargo)
 	to_deliver = max(0.0, to_deliver)
 	if to_deliver <= 0.0:
 		return 0.0
-	GlobalState.cargo -= to_deliver
+	GlobalState.remove_ore(to_deliver)
 	active_quest["partial_delivered"] = active_quest.get("partial_delivered", 0.0) + to_deliver
 	print("[QuestManager] Partial delivery: %.1f m³ banked. Total so far: %.1f / %.1f" % [
 		to_deliver, active_quest["partial_delivered"], active_quest["amount_required"]])
@@ -198,7 +203,8 @@ func complete_quest():
 	if active_quest["objective_type"] == "DELIVER_ORE":
 		var banked = active_quest.get("partial_delivered", 0.0)
 		var remaining_needed = max(0.0, active_quest["amount_required"] - banked)
-		GlobalState.cargo -= remaining_needed
+		if remaining_needed > 0.0:
+			GlobalState.remove_ore(remaining_needed)
 		
 	# Append to history file log
 	var detail = "Completed. Payout: " + str(final_payout) + " SC. Choice selected: '" + active_quest["choice_text_selected"] + "'."

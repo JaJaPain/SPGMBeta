@@ -28,22 +28,28 @@ func _physics_process(delta: float):
 
 func mine():
 	if destroyed: return
-	
+
+	# Refuse to mine if the hold is carrying a special cargo item (e.g. a
+	# part the mechanic gave us). The hold is mutually exclusive — ore
+	# and special cargo cannot coexist.
+	if not GlobalState.can_accept_ore():
+		return
+
 	# Calculate how much space is left in player's cargo
 	var space_left = GlobalState.cargo_max - GlobalState.cargo
 	if space_left <= 0.0:
 		return
-		
+
 	# Mined amount is the minimum of:
 	# 1. Player's mining yield
 	# 2. Remaining asteroid resources
 	# 3. Space left in cargo (Top-off logic!)
 	var amount_to_mine = min(GlobalState.mining_yield, resources)
 	amount_to_mine = min(amount_to_mine, space_left)
-	
+
 	if amount_to_mine > 0.0:
-		GlobalState.cargo += amount_to_mine
-		resources -= amount_to_mine
+		var added = GlobalState.add_ore(amount_to_mine)
+		resources -= added
 		
 		# Visual/text popups could be spawned here
 		

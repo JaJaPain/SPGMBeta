@@ -232,6 +232,103 @@ var cargo: float = 0.0:
 		cargo = clamp(val, 0.0, cargo_max)
 		cargo_changed.emit(cargo)
 
+# ── Cargo type system ──────────────────────────────────────────────────────
+# The cargo hold is mutually exclusive: it holds EITHER ore (tracked by
+# `cargo: float` in m³) OR a single special item (tracked by
+# `cargo_special: Dictionary`), never both. This lets the mechanic and
+# major agents hand the player a "pickup mission" part while still
+# preserving ore as the standard minable resource.
+#   EMPTY   — hold is empty, can accept either ore or a special item
+#   ORE     — carrying ore (no special); player can keep mining
+#   SPECIAL — carrying a single non-ore item; mining laser refuses to fire
+enum CargoType { EMPTY, ORE, SPECIAL }
+
+# What kind of cargo is currently in the hold.
+var cargo_type: int = CargoType.EMPTY
+
+# Special-cargo metadata. Empty dict when cargo_type != SPECIAL.
+# Keys:
+#   "name"        — short display string (e.g. "Replacement Plasma Coupler")
+#   "description" — longer text for tooltips / chatter
+#   "source"      — where the player picked it up (e.g. "Outpost Iron Reach")
+#   "destination" — where it needs to be delivered (e.g. "Grease Monkeys")
+var cargo_special: Dictionary = {}
+
+# Returns true if the hold can accept more ore (empty, or already ore with
+# room left). Returns false if a special item is loaded.
+func can_accept_ore() -> bool:
+	return cargo_type == CargoType.EMPTY or cargo_type == CargoType.ORE
+
+# Returns true if the hold can accept a special cargo item. Only valid
+# when the hold is empty — can't swap out ore for a part.
+func can_accept_special() -> bool:
+	return cargo_type == CargoType.EMPTY
+
+# Add ore to the hold. Returns the amount actually added (capped at
+# cargo_max). Returns 0 if the hold can't accept ore (i.e. a special
+# item is loaded).
+func add_ore(amount: float) -> float:
+	if not can_accept_ore():
+		return 0.0
+	var available = cargo_max - cargo
+	var added = min(amount, available)
+	if added <= 0.0:
+		return 0.0
+	cargo += added
+	cargo_type = CargoType.ORE
+	cargo_changed.emit(cargo)
+	return added
+
+# Accept a special cargo item. Only valid when the hold is empty.
+# Returns true if accepted, false if the hold wasn't empty.
+func accept_special(item_name: String, description: String, source: String, destination: String = "") -> bool:
+	if not can_accept_special():
+		return false
+	cargo_special = {
+		"name": item_name,
+		"description": description,
+		"source": source,
+		"destination": destination,
+	}
+	cargo_type = CargoType.SPECIAL
+	cargo_changed.emit(cargo)
+	return true
+
+# Remove a specific amount of ore. Returns the amount actually removed.
+# If ore drops to 0, the hold auto-returns to EMPTY. Does nothing if the
+# hold is carrying a special item.
+func remove_ore(amount: float) -> float:
+	if cargo_type != CargoType.ORE:
+		return 0.0
+	var removed = min(amount, cargo)
+	removed = max(0.0, removed)
+	cargo -= removed
+	if cargo <= 0.0:
+		clear_cargo()
+	else:
+		cargo_changed.emit(cargo)
+	return removed
+
+# Reset the hold to EMPTY. Used after quest delivery, sell-ore, and when
+# the player jettisons or delivers a special item.
+func clear_cargo() -> void:
+	cargo = 0.0
+	cargo_special = {}
+	cargo_type = CargoType.EMPTY
+	cargo_changed.emit(cargo)
+
+# Returns a short display string for the HUD: "EMPTY", "ORE: 15 / 30 m³",
+# or "SPECIAL: Replacement Plasma Coupler".
+func cargo_display_text() -> String:
+	match cargo_type:
+		CargoType.EMPTY:
+			return "EMPTY"
+		CargoType.ORE:
+			return "ORE: %d / %d m³" % [int(cargo), int(cargo_max)]
+		CargoType.SPECIAL:
+			return "SPECIAL: " + cargo_special.get("name", "(unnamed)")
+	return ""
+
 # Upgradeable ship stats — defaults sourced from SHIP_BASE_STATS so the
 # starter ship is internally consistent with the cap table.
 var cargo_max: float = SHIP_BASE_STATS["cargo_max_m3"]

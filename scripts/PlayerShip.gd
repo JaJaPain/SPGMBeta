@@ -230,12 +230,17 @@ func _physics_process(delta: float):
 		else:
 			camera_aligned = true
 			
-	# Check if cargo filled up
-	if GlobalState.cargo >= GlobalState.cargo_max:
+	# Check if cargo filled up (only matters when carrying ore; special
+	# cargo items don't go through cargo_max the same way)
+	if GlobalState.cargo_type == GlobalState.CargoType.ORE and GlobalState.cargo >= GlobalState.cargo_max:
 		mining_laser.visible = false
 		if nav_mode == "MINE":
 			nav_mode = "MANUAL"
 			target_position = null
+	# When a special item is loaded, hide the mining laser entirely —
+	# the player can't mine until they deliver or jettison the special.
+	elif GlobalState.cargo_type == GlobalState.CargoType.SPECIAL:
+		mining_laser.visible = false
 			
 	if fire_cooldown > 0.0:
 		fire_cooldown -= delta
@@ -257,7 +262,7 @@ func _physics_process(delta: float):
 					nav_mode = "MANUAL"
 					
 			"MINE":
-				if GlobalState.cargo >= GlobalState.cargo_max:
+				if GlobalState.cargo_type != GlobalState.CargoType.ORE or GlobalState.cargo >= GlobalState.cargo_max:
 					nav_mode = "MANUAL"
 					target_position = null
 					mining_laser.visible = false
@@ -437,10 +442,11 @@ func steer_towards(target_pos: Vector3, delta: float):
 
 func perform_action(target_node: Node3D, delta: float):
 	if target_node.is_in_group("asteroid"):
-		if GlobalState.cargo >= GlobalState.cargo_max:
+		# Refuse to mine when hold is full OR when carrying a special item
+		if GlobalState.cargo_type != GlobalState.CargoType.ORE or GlobalState.cargo >= GlobalState.cargo_max:
 			mining_laser.visible = false
 			return
-			
+
 		mining_laser.visible = true
 		
 		# Position laser beam cylinder
