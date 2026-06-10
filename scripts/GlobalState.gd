@@ -76,14 +76,46 @@ const MINOR_FACTIONS = {
 # Keys are display names — the same string the LLM quest-gen puts in
 # `agent_name`. Lookup by name returns image path + cell position.
 const MINOR_NPCS = {
-	"Cassen Vane":   { "image": "res://assets/MinorNPC01.png", "position": "top_left",     "vibe": "grizzled mercenary, scars and salt-and-pepper hair", "outpost": "kova" },
-	"Mariska Vonn":  { "image": "res://assets/MinorNPC01.png", "position": "top_right",    "vibe": "young blonde corporate fixer, white-and-gold outfit", "outpost": "iron_reach" },
-	"Korvin Shaw":   { "image": "res://assets/MinorNPC01.png", "position": "bottom_left",  "vibe": "military veteran, mohawk and full plate armor", "outpost": "kova" },
-	"Hana Quill":    { "image": "res://assets/MinorNPC01.png", "position": "bottom_right", "vibe": "tech analyst, glasses and dark teal jacket", "outpost": "iron_reach" },
-	"Oleg Stroud":   { "image": "res://assets/MinorNPC02.png", "position": "top_left",     "vibe": "syndicate accountant, bald with a monocle", "outpost": "iron_reach" },
-	"Dasha Invar":   { "image": "res://assets/MinorNPC02.png", "position": "top_right",    "vibe": "edgy mercenary, undercut and blue leather", "outpost": "kova" },
-	"Alaric Venn":   { "image": "res://assets/MinorNPC02.png", "position": "bottom_left",  "vibe": "corporate strategist, slicked hair and goatee", "outpost": "iron_reach" },
-	"Jenna Kross":   { "image": "res://assets/MinorNPC02.png", "position": "bottom_right", "vibe": "mechanic with red hair, goggles, and tattoos", "role": "Grease Monkeys mechanic" },
+	"Cassen Vane":   { "image": "res://assets/MinorNPC01.png", "position": "top_left",     "vibe": "grizzled mercenary, scars and salt-and-pepper hair", "outpost": "kova",       "flavor_color": Color(1.0, 0.6, 0.55), "flavor_lines": [
+		"Kova's got no rules, Shiny. Just people with guns and people without.",
+		"Vanguard patrols hit Sector 7 hard last week. Someone's paying them to.",
+		"Aurelia tried to recruit me once. I declined. Politely. With a knife.",
+	] },
+	"Mariska Vonn":  { "image": "res://assets/MinorNPC01.png", "position": "top_right",    "vibe": "young blonde corporate fixer, white-and-gold outfit", "outpost": "iron_reach", "flavor_color": Color(0.55, 0.85, 1.0), "flavor_lines": [
+		"Zenith's been running the numbers on you, Shiny. Try not to disappoint the spreadsheet.",
+		"Iron Reach's market is... complicated. Keep your credits close and your questions closer.",
+		"Aurelia's been sniffing our freight lanes again. Don't ask what they're moving.",
+	] },
+	"Korvin Shaw":   { "image": "res://assets/MinorNPC01.png", "position": "bottom_left",  "vibe": "military veteran, mohawk and full plate armor", "outpost": "kova",       "flavor_color": Color(0.9, 0.85, 0.5), "flavor_lines": [
+		"Vanguard trained me to follow orders. Kova taught me which orders to break.",
+		"The frontier doesn't need heroes. It needs survivors.",
+		"Zenith, Aurelia, Vanguard — pick your side, Shiny. Or pick none and die quietly.",
+	] },
+	"Hana Quill":    { "image": "res://assets/MinorNPC01.png", "position": "bottom_right", "vibe": "tech analyst, glasses and dark teal jacket", "outpost": "iron_reach", "flavor_color": Color(0.5, 0.95, 0.9), "flavor_lines": [
+		"Vanguard's nav buoys are drifting. Either sloppy or probing. Neither's comforting.",
+		"Aurelia's encrypted traffic spiked 40% last cycle. Something's moving.",
+		"Need a firmware update? I can help. Need a favor? That costs more.",
+	] },
+	"Oleg Stroud":   { "image": "res://assets/MinorNPC02.png", "position": "top_left",     "vibe": "syndicate accountant, bald with a monocle", "outpost": "iron_reach", "flavor_color": Color(0.6, 1.0, 0.6), "flavor_lines": [
+		"Books don't lie, Shiny. The credits tell the whole story.",
+		"I keep the ledgers for half the brokers in this sector. Don't ask which half.",
+		"You want a receipt? That'll be extra. Aurelia taught me that.",
+	] },
+	"Dasha Invar":   { "image": "res://assets/MinorNPC02.png", "position": "top_right",    "vibe": "edgy mercenary, undercut and blue leather", "outpost": "kova",       "flavor_color": Color(1.0, 0.55, 0.7), "flavor_lines": [
+		"Don't stare, Shiny. The tattoos have stories and none of them are short.",
+		"Kova's where the contracts go when everywhere else gets too hot.",
+		"You look like trouble. Good. Trouble pays well.",
+	] },
+	"Alaric Venn":   { "image": "res://assets/MinorNPC02.png", "position": "bottom_left",  "vibe": "corporate strategist, slicked hair and goatee", "outpost": "iron_reach", "flavor_color": Color(0.7, 0.75, 1.0), "flavor_lines": [
+		"Iron Reach runs clean. Mostly. Don't dig into the manifest logs.",
+		"Zenith and Vanguard keep circling each other. We take notes and bill both sides.",
+		"You ever wonder who really runs this sector? Follow the supply contracts.",
+	] },
+	"Jenna Kross":   { "image": "res://assets/MinorNPC02.png", "position": "bottom_right", "vibe": "mechanic with red hair, goggles, and tattoos", "role": "Grease Monkeys mechanic", "flavor_color": Color(1.0, 0.85, 0.4), "flavor_lines": [
+		"If it flies, I can fix it. If it doesn't fly, I can make it fly. Hand me the part.",
+		"Your thruster's running hot. I can hear it from here. Pay me now or pay me later.",
+		"The INDY Miner — classic chassis. Easy to work on, hard to keep running.",
+	] },
 }
 
 # ── Station Safe Zones ────────────────────────────────────────────────────────
@@ -212,6 +244,28 @@ static func random_minor_npc_name() -> String:
 	var keys: Array = MINOR_NPCS.keys()
 	return keys[randi() % keys.size()]
 
+# Returns a random flavor line from a random NPC stationed at the given
+# outpost, along with the NPC's name and a chat-color. Drives the
+# "Hear Gossip" button at outpost docks — each click rotates to a
+# different NPC and a different line, so the player can keep clicking
+# for variety. Returns an empty dict if the outpost has no NPCs assigned.
+# Returned shape: { "npc_name": String, "line": String, "color": Color }
+static func get_random_npc_flavor_line(outpost_id: String) -> Dictionary:
+	var npcs: Array = get_minor_npcs_at_outpost(outpost_id)
+	if npcs.is_empty():
+		return {}
+	var npc_name: String = npcs[randi() % npcs.size()]
+	var npc: Dictionary = MINOR_NPCS[npc_name]
+	var lines: Array = npc.get("flavor_lines", [])
+	if lines.is_empty():
+		return {}
+	var line: String = lines[randi() % lines.size()]
+	return {
+		"npc_name": npc_name,
+		"line": line,
+		"color": npc.get("flavor_color", Color.WHITE),
+	}
+
 signal target_changed(new_target: Node3D)
 signal cargo_changed(new_cargo: float)
 signal credits_changed(new_credits: int)
@@ -253,6 +307,16 @@ var cargo_type: int = CargoType.EMPTY
 #   "source"      — where the player picked it up (e.g. "Outpost Iron Reach")
 #   "destination" — where it needs to be delivered (e.g. "Grease Monkeys")
 var cargo_special: Dictionary = {}
+
+# Active test pickup-quest state. Empty dict when no test quest is active.
+# Used by the Grease Monkeys maintenance-bay debug buttons. Keys:
+#   "outpost_id"     — "iron_reach" or "kova"
+#   "outpost_display"— e.g. "Outpost Iron Reach"
+#   "npc_name"       — which minor NPC at that outpost
+#   "part_name"      — what to pick up
+#   "picked_up"      — false until the player clicks Pickup at the outpost,
+#                     then true (and the part is loaded into cargo_special)
+var test_quest: Dictionary = {}
 
 # Returns true if the hold can accept more ore (empty, or already ore with
 # room left). Returns false if a special item is loaded.

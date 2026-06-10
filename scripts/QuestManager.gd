@@ -111,6 +111,10 @@ func is_quest_completed() -> bool:
 		var banked = active_quest.get("partial_delivered", 0.0)
 		var in_hold = GlobalState.cargo if GlobalState.cargo_type == GlobalState.CargoType.ORE else 0.0
 		return (banked + in_hold) >= active_quest["amount_required"]
+	elif type == "PICKUP_SPECIAL":
+		# Completed when the player has picked up the part at the outpost
+		# (i.e. the special cargo is loaded in the hold).
+		return active_quest.get("picked_up", false)
 		
 	return false
 
@@ -165,7 +169,17 @@ func accept_quest(quest_data: Dictionary, selected_choice: Dictionary):
 	elif type == "DELIVER_ORE":
 		active_quest["amount_required"] = max(1.0, snapped(obj_data.get("amount_required", 20.0), 1.0))
 		active_quest["partial_delivered"] = 0.0  # Tracks ore already handed in via partial shipments
-		
+	elif type == "PICKUP_SPECIAL":
+		# Special-cargo pickup: go to a named outpost, talk to a named NPC,
+		# collect a part, bring it back. The cargo is loaded when the player
+		# actually picks it up at the outpost (mark_pickup_complete).
+		active_quest["target_outpost"] = obj_data.get("target_outpost", "")
+		active_quest["target_outpost_display"] = obj_data.get("target_outpost_display", active_quest["target_outpost"])
+		active_quest["target_npc"] = obj_data.get("target_npc", "")
+		active_quest["part_name"] = obj_data.get("part_name", "Unknown Part")
+		active_quest["destination"] = obj_data.get("destination", "Grease Monkeys")
+		active_quest["picked_up"] = false
+
 	print("[QuestManager] Quest accepted: ", active_quest["title"], " type:", type, " (Difficulty multiplier: ", combat_mult, ")")
 	quest_accepted.emit()
 
@@ -188,6 +202,28 @@ func deliver_partial(amount: float) -> float:
 	quest_progress_updated.emit()
 	return to_deliver
 
+# Mark a PICKUP_SPECIAL quest as picked up. Called from the outpost dock UI
+# when the player "talks to" the target NPC. Loads the part into the cargo
+# hold via GlobalState.accept_special. Returns true on success, false if
+# the quest isn't a PICKUP_SPECIAL, isn't active, or is already picked up.
+func mark_pickup_complete() -> bool:
+	if not is_quest_active() or active_quest["objective_type"] != "PICKUP_SPECIAL":
+		return false
+	if active_quest.get("picked_up", false):
+		return false
+	active_quest["picked_up"] = true
+	var part_name: String = active_quest.get("part_name", "Unknown Part")
+	var target_npc: String = active_quest.get("target_npc", "an unknown contact")
+	var target_outpost: String = active_quest.get("target_outpost_display", active_quest.get("target_outpost", "an outpost"))
+	var destination: String = active_quest.get("destination", "Grease Monkeys")
+	var description: String = "Picked up from %s at %s. Deliver to %s at %s." % [
+		target_npc, target_outpost, active_quest["agent_name"], destination
+	]
+	GlobalState.accept_special(part_name, description, target_outpost, destination)
+	print("[QuestManager] PICKUP_SPECIAL picked up: '%s' from %s" % [part_name, target_npc])
+	quest_progress_updated.emit()
+	return true
+
 func complete_quest():
 	if not is_quest_active() or not is_quest_completed():
 		return
@@ -205,7 +241,20 @@ func complete_quest():
 		var remaining_needed = max(0.0, active_quest["amount_required"] - banked)
 		if remaining_needed > 0.0:
 			GlobalState.remove_ore(remaining_needed)
-		
+	# PICKUP_SPECIAL quest: deliver the part. The hold must contain the
+	# expected part — if not, refuse to complete (player has the wrong item
+	# or the hold was cleared manually).
+	elif active_quest["objective_type"] == "PICKUP_SPECIAL":
+		var expected_part: String = active_quest.get("part_name", "")
+		if GlobalState.cargo_type != GlobalState.CargoType.SPECIAL:
+			print("[QuestManager] PICKUP_SPECIAL: cannot complete, hold is empty")
+			return
+		if GlobalState.cargo_special.get("name", "") != expected_part:
+			print("[QuestManager] PICKUP_SPECIAL: cannot complete, hold has '%s', expected '%s'" % [
+				GlobalState.cargo_special.get("name", ""), expected_part])
+			return
+		GlobalState.clear_cargo()
+
 	# Append to history file log
 	var detail = "Completed. Payout: " + str(final_payout) + " SC. Choice selected: '" + active_quest["choice_text_selected"] + "'."
 	_log_quest_to_file(active_quest["title"], active_quest["objective_type"], detail)

@@ -2416,6 +2416,15 @@ func _update_quest_tracker():
 			quest_tracker_progress.text += " (%.0f banked)" % banked
 		if total_so_far >= required:
 			quest_tracker_progress.text += " (Ready)"
+	elif q["objective_type"] == "PICKUP_SPECIAL":
+		if q.get("picked_up", false):
+			# After pickup, show what's in hold and where to deliver
+			quest_tracker_progress.text = "Deliver: %s to %s" % [q["part_name"], q["destination"]]
+		else:
+			# Before pickup, show the destination outpost + NPC
+			quest_tracker_progress.text = "Pickup: %s from %s @ %s" % [
+				q["part_name"], q["target_npc"], q["target_outpost_display"]
+			]
 
 
 func _update_quest_tracker_logo(faction: String):
