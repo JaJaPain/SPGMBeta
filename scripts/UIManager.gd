@@ -2356,7 +2356,7 @@ func show_dock_message(text: String, npc_name: String = "", color: Color = Color
 		if is_instance_valid(dock_message_slot):
 			dock_message_slot.visible = false
 			dock_message_slot.modulate.a = 1.0
-	})
+	)
 
 # Clear the docked-message slot immediately. Called on submenu change
 # and undock so an old flavor line or pickup response doesn't leak
