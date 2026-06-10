@@ -1472,7 +1472,9 @@ func toggle_dock_menu(station: Node3D):
 		# unique voice. Background — does not block the dock UI.
 		# Refresh-on-use (when a line is played from cache-miss
 		# path) re-warms the remaining lines for that NPC.
-		if is_outpost and outpost_id != "":
+		var docked_outpost_id_for_precache: String = OUTPOST_NODE_TO_ID.get(station.name, "") if station else ""
+		if is_outpost and docked_outpost_id_for_precache != "":
+			var outpost_id: String = docked_outpost_id_for_precache
 			var prev_count: int = int(_outpost_flavor_precached.get(outpost_id, 0))
 			print("[TRACE] [UIManager] Pre-caching TTS for outpost '", outpost_id, "' flavor lines (", prev_count, " pre-warmed this session).")
 			var flavor_lines: Array = GlobalState.get_outpost_flavor_tts_lines(outpost_id)
