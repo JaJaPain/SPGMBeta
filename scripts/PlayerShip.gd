@@ -262,7 +262,12 @@ func _physics_process(delta: float):
 					nav_mode = "MANUAL"
 					
 			"MINE":
-				if GlobalState.cargo_type != GlobalState.CargoType.ORE or GlobalState.cargo >= GlobalState.cargo_max:
+				# Refuse to mine when a special item is loaded OR when
+				# the ore hold is full. EMPTY hold is fine — that's the
+				# default state on a fresh game and the player should be
+				# able to mine from empty. (Previous condition used
+				# `cargo_type != ORE` which incorrectly bailed on EMPTY.)
+				if not GlobalState.can_accept_ore() or GlobalState.cargo >= GlobalState.cargo_max:
 					nav_mode = "MANUAL"
 					target_position = null
 					mining_laser.visible = false
@@ -442,8 +447,12 @@ func steer_towards(target_pos: Vector3, delta: float):
 
 func perform_action(target_node: Node3D, delta: float):
 	if target_node.is_in_group("asteroid"):
-		# Refuse to mine when hold is full OR when carrying a special item
-		if GlobalState.cargo_type != GlobalState.CargoType.ORE or GlobalState.cargo >= GlobalState.cargo_max:
+		# Refuse to mine when a special item is loaded OR when the
+		# ore hold is full. EMPTY hold is allowed (default state on a
+		# fresh game). (Previous condition used `cargo_type != ORE`
+		# which incorrectly refused to fire the laser when the hold
+		# was empty.)
+		if not GlobalState.can_accept_ore() or GlobalState.cargo >= GlobalState.cargo_max:
 			mining_laser.visible = false
 			return
 
