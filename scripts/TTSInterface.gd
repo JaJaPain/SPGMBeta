@@ -19,6 +19,19 @@ var last_interaction_name: String = ""
 # is a one-session in-memory cache only.)
 var tts_audio_cache: Dictionary = {}
 
+# ── Pre-TTS dialogue verify (ToneGuard) ─────────────────────────────────────
+# "Shiny" is Broker Kaelen's vocative for the player pilot. She uses it
+# every line. Every other speaker in the game should NOT use it — it
+# leaks her voice onto Jenna, minor NPCs, future quest givers, and
+# anything else routed through the TTS pipeline. The LLM prompt for the
+# mechanic greeting already forbids it, but a 1.5b model slips. This
+# verify is the safety net that runs in BOTH play_dialogue_audio and
+# cache_dialogue_audio so the cached audio file matches the text on
+# screen (no audible drift between what the player sees and hears).
+#
+# The actual rules live on GlobalState (apply_tone_guard) so the same
+# rewriting runs on the on-screen text and stays in sync.
+
 signal cache_queue_completed()
 var active_cache_requests: int = 0
 
@@ -85,21 +98,30 @@ func play_dialogue_audio(text: String, voice_id_override: Variant = "neutral", s
 			speed_override = 1.0
 
 	tts_request_time = Time.get_ticks_msec()
-	
+
 	if is_requesting:
 		http_request.cancel_request()
 		is_requesting = false
-		
+
 	if audio_player.playing:
 		audio_player.stop()
 		AudioManager.unduck_audio()
-		
+
 	text = text.strip_edges()
 	# Clean up meta headers, details, options or empty spaces to avoid reading formatting
 	var clean_text = clean_dialogue_text(text)
 	if clean_text == "":
 		print("[TRACE] [TTSInterface] Cleaned text is empty, skipping speech.")
 		return
+
+	# Tone guard: rewrite speaker-voice leaks for non-Kaelen speakers so
+	# "Shiny" (Kaelen's vocative) becomes "Indy" before TTS hears it.
+	# Runs on the already-cleaned text. Logs a one-line trace when a
+	# substitution happens so the editor console shows the swap.
+	var tone_guarded: String = GlobalState.apply_tone_guard(clean_text, voice_id)
+	if tone_guarded != clean_text:
+		print("[TRACE] [TTSInterface] Tone guard rewrote line for voice '%s': '%s' -> '%s'" % [voice_id, clean_text, tone_guarded])
+		clean_text = tone_guarded
 		
 	var elapsed_str = ""
 	if last_interaction_time > 0.0:
@@ -155,6 +177,13 @@ func cache_dialogue_audio(text: String, voice_id_or_faction: String = "neutral",
 		voice_id = voice_id_or_faction if voice_id_or_faction != "" else "af_bella"
 		if speed < 0.0:
 			speed = 1.0
+
+	# Tone guard (see play_dialogue_audio). The cached audio must match
+	# what gets played — running the rewrite here keeps cache_key and
+	# the on-disk file aligned with the verify rules. A line cached
+	# pre-verify and played post-verify would sound different than the
+	# on-screen text.
+	clean_text = GlobalState.apply_tone_guard(clean_text, voice_id)
 
 	var cache_key: String = voice_id + "|" + clean_text
 	if tts_audio_cache.has(cache_key):

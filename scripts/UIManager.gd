@@ -35,6 +35,33 @@ var dock_message_portrait: TextureRect
 var dock_message_name: Label
 var dock_message_line: Label
 var dock_message_tween: Tween
+# ── Mechanic (Jenna Kross) dock intro ───────────────────────────────────────
+# Portrait + personalized greeting that pops in the top area of the dock panel
+# when the player enters the Grease Monkeys maintenance submenu. Layout:
+# portrait on the left, name + greeting chat box on the right. Cached on
+# dock so first entry is instant. LLM-driven when available, otherwise picks
+# one of 10 canned lines that reference the player's ship and reputation.
+# See _cache_mechanic_intro() and _render_mechanic_intro().
+var mechanic_intro_panel: PanelContainer
+var mechanic_intro_hbox: HBoxContainer
+var mechanic_portrait: TextureRect
+var mechanic_name_label: Label
+var mechanic_line_label: Label
+# Cached greeting (string) + its TTS cache state. The cached line sticks
+# across undock/redock at the same station (so re-entering maintenance
+# shows the same line unless the player clicks "Speak" or rep changes
+# meaningfully). Cleared on a fresh dock so the next arrival regenerates.
+var _cached_mechanic_line: String = ""
+var _cached_mechanic_line_is_fallback: bool = false
+var _mechanic_precache_in_flight: bool = false
+# Monotonic request id. Bumped every time we fire a new LLM call so
+# stale callbacks don't overwrite the latest cache. Stale callbacks
+# bail at the top of the lambda.
+var _mechanic_request_id: int = 0
+# Last line we actually played via TTS. Used to avoid re-playing the
+# same line when the player toggles between Services and Maintenance
+# submenus (which both call _render_mechanic_intro).
+var _last_played_mechanic_line: String = ""
 var sell_btn: Button
 var upgrade_cargo_btn: Button
 var upgrade_laser_btn: Button
@@ -675,6 +702,68 @@ func _create_dock_menu():
 	dock_label.text = "STATION SERVICES"
 	dock_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	vbox.add_child(dock_label)
+
+	# ── Mechanic (Jenna Kross) intro panel ─────────────────────────────────
+	# Lives in the dock panel, shown only while the maintenance submenu is
+	# active. Portrait (left, sliced from MinorNPC02.png at Jenna's cell) +
+	# name + greeting chat box (right) + a small "Speak" button to roll a
+	# new line. Visible by default? No — _render_mechanic_intro() shows it
+	# only on maintenance submenu, and clears it on services / undock.
+	mechanic_intro_panel = PanelContainer.new()
+	mechanic_intro_panel.name = "MechanicIntroPanel"
+	mechanic_intro_panel.visible = false
+	mechanic_intro_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var mech_style := StyleBoxFlat.new()
+	mech_style.bg_color = Color(0.05, 0.05, 0.08, 0.85)
+	mech_style.border_width_left = 1
+	mech_style.border_width_top = 1
+	mech_style.border_width_right = 1
+	mech_style.border_width_bottom = 1
+	# Warm amber border to match Jenna's flavor_color (GlobalState.MINOR_NPCS).
+	mech_style.border_color = Color(1.0, 0.85, 0.4, 0.6)
+	mech_style.corner_radius_top_left = 4
+	mech_style.corner_radius_top_right = 4
+	mech_style.corner_radius_bottom_right = 4
+	mech_style.corner_radius_bottom_left = 4
+	mech_style.content_margin_left = 8
+	mech_style.content_margin_right = 8
+	mech_style.content_margin_top = 6
+	mech_style.content_margin_bottom = 6
+	mechanic_intro_panel.add_theme_stylebox_override("panel", mech_style)
+	vbox.add_child(mechanic_intro_panel)
+
+	mechanic_intro_hbox = HBoxContainer.new()
+	mechanic_intro_hbox.add_theme_constant_override("separation", 12)
+	mechanic_intro_panel.add_child(mechanic_intro_hbox)
+
+	mechanic_portrait = TextureRect.new()
+	mechanic_portrait.custom_minimum_size = Vector2(96, 96)
+	mechanic_portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	mechanic_portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	mechanic_intro_hbox.add_child(mechanic_portrait)
+
+	var mech_text_vbox := VBoxContainer.new()
+	mech_text_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	mech_text_vbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	mechanic_intro_hbox.add_child(mech_text_vbox)
+
+	mechanic_name_label = Label.new()
+	mechanic_name_label.text = "JENNA KROSS"
+	mechanic_name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	mechanic_name_label.add_theme_font_size_override("font_size", 14)
+	mechanic_name_label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.4))
+	mechanic_name_label.add_theme_color_override("font_shadow_color", Color.BLACK)
+	mechanic_name_label.add_theme_constant_override("shadow_outline_size", 2)
+	mech_text_vbox.add_child(mechanic_name_label)
+
+	mechanic_line_label = Label.new()
+	mechanic_line_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	mechanic_line_label.autowrap_mode = TextServer.AUTOWRAP_WORD
+	mechanic_line_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	mechanic_line_label.add_theme_font_size_override("font_size", 14)
+	mechanic_line_label.add_theme_color_override("font_shadow_color", Color.BLACK)
+	mechanic_line_label.add_theme_constant_override("shadow_outline_size", 2)
+	mech_text_vbox.add_child(mechanic_line_label)
 
 	# Docked-message slot. Hidden by default; surfaces flavor lines
 	# (Hear Gossip) and quest pickup responses inside the dock panel.
@@ -1582,6 +1671,13 @@ func toggle_dock_menu(station: Node3D):
 				TTSInterface.cache_dialogue_audio(entry["line"], entry["voice_id"], entry["voice_speed"])
 			_outpost_flavor_precached[outpost_id] = prev_count + flavor_lines.size()
 
+		# Pre-cache Jenna's (mechanic) personalized greeting when the player
+		# docks at the main station (Grease Monkeys). Runs in the background;
+		# by the time the player clicks "Maintenance Bay" the chat box has
+		# text. Falls back to a canned line if the LLM is slow / offline.
+		if not is_outpost:
+			_cache_mechanic_intro()
+
 
 # Render the current submenu's button set. Called on dock AND when the
 # player clicks between Services and Maintenance. The Grease Monkeys
@@ -1616,6 +1712,16 @@ func _render_dock_submenu() -> void:
 			if dock_background.texture == null:
 				dock_background.texture = load("res://assets/RepairShop.png")
 			dock_background.visible = true
+		# Mechanic intro panel: portrait + personalized greeting for the
+		# current visit. Hidden at outposts (no mechanic) and on services
+		# submenu (gossip slot takes that space). _render_mechanic_intro
+		# pulls from cache if the LLM has returned, else picks a fallback
+		# immediately so the chat box is never empty.
+		if not is_outpost:
+			_render_mechanic_intro()
+		else:
+			if mechanic_intro_panel and is_instance_valid(mechanic_intro_panel):
+				mechanic_intro_panel.visible = false
 	else:
 		# Services submenu (default): at a full-service station, show
 		# sell/agent/maintenance entry. At an outpost, show only the
@@ -1634,6 +1740,11 @@ func _render_dock_submenu() -> void:
 		back_to_services_btn.visible = false
 		if dock_background:
 			dock_background.visible = false
+		# Mechanic intro belongs only on the maintenance submenu. On
+		# services the dock_message_slot (gossip / quest responses)
+		# takes that space — keep them mutually exclusive.
+		if mechanic_intro_panel and is_instance_valid(mechanic_intro_panel):
+			mechanic_intro_panel.visible = false
 
 	# Update button labels + repair state regardless of submenu — keeps
 	# the cost text fresh in case the player swaps submenus while in dock.
@@ -1650,6 +1761,317 @@ func _on_maintenance_bay_pressed() -> void:
 func _on_back_to_services_pressed() -> void:
 	current_submenu = DockSubmenu.SERVICES
 	_render_dock_submenu()
+
+
+# ── Mechanic (Jenna Kross) dock greeting ───────────────────────────────────
+# When the player docks at the main station (Grease Monkeys), we pre-cache
+# a personalized greeting for Jenna so the first time the player enters the
+# maintenance submenu the chat box has text ready. Tries the LLM first
+# (qwen2.5:1.5b — small but cheap), falls back to one of 10 canned lines
+# selected by ship class + reputation tier. The LLM prompt is engineered
+# to keep her voice: cocky, observant, knows things about the pilot she
+# shouldn't know yet — like a good mechanic should.
+
+# Player's ship class as it appears in dialogue. Today there's only one
+# starter chassis (the INDY Miner, see GlobalState.SHIP_BASE_STATS), but
+# future variants should plug in here so the line can name the chassis
+# directly. Keep these short and punchy — they show up inside the chat box.
+const PLAYER_SHIP_NAME = "INDY Miner"
+
+# 10 canned lines. Each is a complete, in-character greeting Jenna would
+# give at the maintenance bay. References ship class and/or reputation
+# tier. Always a little too personal — implies she already knows things
+# about the pilot. Used:
+#   1. As offline fallback when the LLM is unreachable.
+#   2. As few-shot examples fed to the LLM (see request_mechanic_intro)
+#      so the generated line matches voice, length, and structure.
+# Picked deterministically by reputation tier + ship state so a returning
+# player gets a line that feels like "she remembers you" without a second
+# of LLM latency on cold start.
+const FALLBACK_MECHANIC_GREETINGS: Array = [
+	"INDY Miner, right? Heard your thruster's been screaming bloody murder for three sectors. Drop her on the rack — I'll work my magic.",
+	"Cute ship. Zenith's not going to be happy you scratched the paint, but don't worry, I don't snitch. What hurts first?",
+	"INDY Miner. Of course. You Aurelia contracts or Vanguard contracts? I can tell from the scorch marks. Sit down, I've got you.",
+	"Oh good, the pilot Vanguard put on a watchlist. Don't worry, Indy — Grease Monkeys is neutral ground. Mostly. What's broken?",
+	"You flew that thing here on three engine cycles? Respect. And stupidity. Park it, I'll patch the frame before I judge the rest of you.",
+	"INDY Miner hull, unlisted cargo, Zenith is friendly, Vanguard is pissed. Yeah, I read the registry. I read everything. What do you need?",
+	"Your ship's prettier than your rep sheet, and that's not a compliment. Cute INDY though. Bring her around, I'll fix what Aurelia's goons dented.",
+	"Heard you picked a fight with a Reaver in an INDY Miner and walked away. I'm calling bullshit, but I'm also curious. Pop the hood.",
+	"You know, when INDY Miner pilots start showing up at my bay, it's usually because they're one bad landing from exploding. Which one are you?",
+	"Yeah, yeah — famous pilot, dangerous reputation, pristine INDY Miner. Sit down before I charge you for standing in my workspace, Indy.",
+]
+
+# Returns the tier name for the player's WORST faction reputation.
+# Jenna greases palms across the sector, so she's heard about the player
+# from at least one of them. Worst-tier ("sworn enemy" / "hostile") makes
+# for the cheekiest lines.
+func _worst_reputation_tier() -> String:
+	var worst_tier: String = "neutral"
+	var worst_val: float = 0.0
+	for faction in GlobalState.reputations:
+		var rep: float = float(GlobalState.reputations[faction])
+		if rep < worst_val:
+			worst_val = rep
+			worst_tier = GlobalState.reputation_tier(rep)
+	return worst_tier
+
+# Returns the tier name for the player's BEST faction reputation.
+# "allied" / "trusted" lines imply Jenna's heard good things from
+# corporate / military channels.
+func _best_reputation_tier() -> String:
+	var best_tier: String = "neutral"
+	var best_val: float = 0.0
+	for faction in GlobalState.reputations:
+		var rep: float = float(GlobalState.reputations[faction])
+		if rep > best_val:
+			best_val = rep
+			best_tier = GlobalState.reputation_tier(rep)
+	return best_tier
+
+# Pre-cache a personalized Jenna greeting when the player docks at
+# Grease Monkeys. Kicks off the LLM call in the background; if it
+# returns in time, we use it, otherwise the canned array covers us.
+# Idempotent: only triggers once per dock. Clears the prior cached line
+# so the next render shows the new one.
+func _cache_mechanic_intro() -> void:
+	# Don't bail if a request is in flight — the Speak button legitimately
+	# wants to interrupt and fire a new one. The request id guards
+	# against stale callbacks overwriting the new one.
+	_mechanic_precache_in_flight = true
+	_mechanic_request_id += 1
+	var my_request_id: int = _mechanic_request_id
+	_cached_mechanic_line = ""
+	_cached_mechanic_line_is_fallback = false
+
+	# Build context for the LLM. Keep it small — the 1.5b model chews
+	# tokens fast, and we want the line back in <2s. We feed the model
+	# the exact same canned lines as few-shot examples so the generated
+	# output matches voice, length, and structure.
+	var worst_tier: String = _worst_reputation_tier()
+	var best_tier: String = _best_reputation_tier()
+	var ship: String = PLAYER_SHIP_NAME
+	var credits: int = GlobalState.player_credits
+
+	# If LLM is reachable, try the real call. LLMInterface is the same
+	# path used for Kaelen handoffs, so we know it works end-to-end.
+	# (request_mechanic_intro is added below as a thin wrapper so the
+	# prompt stays local to this feature rather than spamming LLMInterface.)
+	_request_mechanic_intro(ship, worst_tier, best_tier, credits, func(line: String, is_fallback: bool) -> void:
+		# Stale-callback guard: only the latest request wins. If a newer
+		# Speak click already fired (request_id > mine), bail without
+		# touching the cache or playing anything.
+		if my_request_id != _mechanic_request_id:
+			print("[TRACE] [UIManager] Stale mechanic greeting callback (id=", my_request_id, " vs ", _mechanic_request_id, "). Dropping.")
+			return
+		_cached_mechanic_line = line
+		_cached_mechanic_line_is_fallback = is_fallback
+		_mechanic_precache_in_flight = false
+		print("[TRACE] [UIManager] Mechanic greeting cached. fallback=", is_fallback, " len=", line.length())
+		# Pre-cache the TTS so the line is instant when the player enters
+		# maintenance. Uses Jenna's voice (af_aoede) for consistency with
+		# her other flavor lines.
+		if not is_fallback and line.strip_edges() != "":
+			TTSInterface.cache_dialogue_audio(line, "af_aoede", 1.0)
+		# If the player is already inside the maintenance submenu, refresh
+		# the chat box immediately (otherwise the cached line waits for
+		# next entry). _render_mechanic_intro will auto-play if the line
+		# is new.
+		if current_submenu == DockSubmenu.MAINTENANCE:
+			_render_mechanic_intro()
+	)
+
+# Thin wrapper around the LLM. Falls back to a tier-weighted canned line
+# if the model is offline / slow / returns garbage. The prompt is built
+# locally so this feature stays self-contained.
+func _request_mechanic_intro(ship: String, worst_tier: String, best_tier: String, credits: int, callback: Callable) -> void:
+	# Quick offline check — if LLMInterface has no active model, skip straight
+	# to the fallback. The Kaelen intro path uses the same gate.
+	if LLMInterface.active_model_name == "":
+		var fb: String = _pick_fallback_mechanic_greeting(ship, worst_tier, best_tier)
+		callback.call(fb, true)
+		return
+	# Build examples block (3 of 10, varied so the LLM doesn't latch onto
+	# one template). We feed ONLY Jenna lines, never Kaelen's, so the
+	# generated output stays in her voice.
+	var examples: Array = [
+		FALLBACK_MECHANIC_GREETINGS[0],
+		FALLBACK_MECHANIC_GREETINGS[4],
+		FALLBACK_MECHANIC_GREETINGS[7],
+	]
+	var examples_block: String = ""
+	for ex in examples:
+		examples_block += "- \"" + ex + "\"\n"
+	# Stronger prompt: explicit speaker identity, hard requirements, and
+	# anti-Kaelen guard rails. The 1.5b model drifts easily if we just say
+	# "be Jenna" — naming the speaker, giving exact facts to weave in,
+	# and forbidding Kaelen phrases fixes the drift we saw in the first
+	# pass (LLM was returning Kaelen handoff lines like "Your best
+	# friend's always on standby").
+	var prompt: String = (
+		"You ARE Jenna Kross, a grease-monkey mechanic at the main station dock. "
+		+ "You are NOT Broker Kaelen, NOT an agent, NOT a quest-giver. You fix ships for a living.\n\n"
+		+ "FACT PACKET (use these exact strings):\n"
+		+ "- Ship: \"" + ship + "\"\n"
+		+ "- Worst faction rep tier: \"" + worst_tier + "\"\n"
+		+ "- Best faction rep tier: \"" + best_tier + "\"\n"
+		+ "- Credits: " + str(credits) + "\n\n"
+		+ "Here are 3 of YOUR OWN (Jenna's) past greetings, in your exact voice:\n"
+		+ examples_block + "\n"
+		+ "Write ONE NEW greeting. HARD REQUIREMENTS:\n"
+		+ "1. 1-2 sentences, max 200 chars.\n"
+		+ "2. You MUST mention the ship name \"" + ship + "\" literally (or a short form like \"that crate\").\n"
+		+ "3. You MUST reference the rep tier \"" + worst_tier + "\" OR \"" + best_tier + "\" OR the credit count. Pick one.\n"
+		+ "4. Cocky mechanic voice — second person (\"you\"), observational, a little too personal.\n"
+		+ "5. NO phrases like \"your best friend\", \"stay put\", \"sit tight\", \"wait here\", \"I'll fetch\", \"hold on\", \"Shiny\". Those are KAELEN's phrases, not yours. Call the pilot \"Indy\" or just \"you\" — NEVER \"Shiny\".\n"
+		+ "6. NO hashtags, NO emojis, NO quotes around the line.\n\n"
+		+ "Output ONLY valid JSON: {\"line\": \"<your greeting>\"}"
+	)
+	# Fire the LLM call. The body reuses the Kaelen intro machinery via a
+	# direct Ollama request — no need to add a new LLMInterface method.
+	# (See _request_mechanic_intro_via_ollama below for the actual HTTP.)
+	_request_mechanic_intro_via_ollama(prompt, ship, worst_tier, best_tier, callback)
+
+# Validate a generated Jenna line. Returns true if the line actually
+# sounds like her — names the ship and references rep/credits, and
+# doesn't contain Kaelen voice tells. Catches the first-pass drift
+# bug where the LLM returned a Kaelen handoff line.
+func _is_valid_mechanic_line(line: String, ship: String, worst_tier: String, best_tier: String) -> bool:
+	var lower: String = line.to_lower()
+	# Must mention the ship (or a short form of it). The 1.5b model
+	# sometimes abbreviates "INDY Miner" to "INDY" or "your crate".
+	var ship_l: String = ship.to_lower()
+	var ship_short: String = ship_l.split(" ")[0]  # "indy miner" -> "indy"
+	if not (lower.contains(ship_l) or lower.contains(ship_short) or lower.contains("that crate") or lower.contains("your crate") or lower.contains("your ship") or lower.contains("your rig")):
+		print("[TRACE] [UIManager] Mechanic line rejected: no ship reference. line=\"", line, "\"")
+		return false
+	# Must reference rep OR credits. Check for tier names, credit keywords,
+	# or a credit count in the line.
+	var rep_words: Array = ["reputation", "rep sheet", "rep", "watchlist", "hostile", "trusted", "allied", "friendly", "cordial", "enemy", "scorch", "wanted", "marked", "neutral"]
+	var has_rep: bool = false
+	for w in rep_words:
+		if lower.contains(w):
+			has_rep = true
+			break
+	var has_credits: bool = lower.contains("credit") or lower.contains("sc") or lower.contains("wallet") or lower.contains("broke") or lower.contains("rich")
+	# Also accept if either tier name appears literally.
+	if not has_rep:
+		if worst_tier != "neutral" and lower.contains(worst_tier):
+			has_rep = true
+		elif best_tier != "neutral" and lower.contains(best_tier):
+			has_rep = true
+	if not (has_rep or has_credits):
+		print("[TRACE] [UIManager] Mechanic line rejected: no rep/credit reference. line=\"", line, "\"")
+		return false
+	# Kaelen voice-tell filter. Hard reject any line that sounds like
+	# Kaelen's handoff phrases. "Shiny" / "shiny" is Kaelen's vocative
+	# for the pilot — Jenna doesn't use it. The pre-TTS verify script
+	# in TTSInterface would also catch it, but rejecting at the source
+	# keeps the on-screen text clean too.
+	var kaelen_tells: Array = ["best friend", "stay put", "sit tight", "wait here", "i'll fetch", "i'll grab", "hold on", "hold here", "stay here", "shiny"]
+	for tell in kaelen_tells:
+		if lower.contains(tell):
+			print("[TRACE] [UIManager] Mechanic line rejected: Kaelen voice-tell '", tell, "' found. line=\"", line, "\"")
+			return false
+	# Length sanity.
+	if line.length() < 25 or line.length() > 300:
+		print("[TRACE] [UIManager] Mechanic line rejected: length out of bounds. line=\"", line, "\"")
+		return false
+	return true
+
+# Direct Ollama HTTP call. Mirrors LLMInterface.request_kaelen_intro's
+# shape but stays self-contained so the mechanic feature doesn't depend
+# on Kaelen's prompt evolution.
+func _request_mechanic_intro_via_ollama(prompt: String, ship: String, worst_tier: String, best_tier: String, callback: Callable) -> void:
+	var url: String = LLMInterface.OLLAMA_URL
+	var model: String = LLMInterface.active_model_name if LLMInterface.active_model_name != "" else "qwen2.5:1.5b"
+	var body: Dictionary = {
+		"model": model,
+		"prompt": prompt,
+		"stream": false,
+		"format": "json",
+		"options": { "temperature": 0.85, "num_predict": 180 },
+	}
+	var headers: PackedStringArray = ["Content-Type: application/json"]
+	var http := HTTPRequest.new()
+	add_child(http)
+	http.timeout = 8.0  # tight — we'd rather fall back than stall the dock UI
+	http.request_completed.connect(func(result: int, code: int, _h: PackedStringArray, body_bytes: PackedByteArray) -> void:
+		http.queue_free()
+		if result != HTTPRequest.RESULT_SUCCESS or code != 200:
+			print("[TRACE] [UIManager] Mechanic LLM call failed (result=", result, " code=", code, "). Falling back.")
+			callback.call(_pick_fallback_mechanic_greeting(PLAYER_SHIP_NAME, _worst_reputation_tier(), _best_reputation_tier()), true)
+			return
+		var raw: String = body_bytes.get_string_from_utf8()
+		var parsed = JSON.parse_string(raw)
+		if parsed is Dictionary and parsed.has("response"):
+			var inner_str: String = str(parsed["response"])
+			var inner = JSON.parse_string(inner_str)
+			if inner is Dictionary and inner.has("line"):
+				var line: String = str(inner["line"]).strip_edges()
+				if line != "" and _is_valid_mechanic_line(line, ship, worst_tier, best_tier):
+					print("[TRACE] [UIManager] Mechanic LLM line accepted: \"", line.left(80), "...\"")
+					callback.call(line, false)
+					return
+		# Anything else: fall back.
+		print("[TRACE] [UIManager] Mechanic LLM returned invalid/unparseable line. Falling back to canned.")
+		callback.call(_pick_fallback_mechanic_greeting(PLAYER_SHIP_NAME, _worst_reputation_tier(), _best_reputation_tier()), true)
+	)
+	http.request(url, headers, HTTPClient.METHOD_POST, JSON.stringify(body))
+
+# Pick a canned line. Tries to weight toward rep-aware lines so a returning
+# player doesn't see the same opening every visit, but the LLM fallback
+# path is the real variety engine. Index is hashed from current state so
+# consecutive docks at the same reputation get a different line each time.
+func _pick_fallback_mechanic_greeting(ship: String, worst_tier: String, best_tier: String) -> String:
+	# Deterministic-by-state + a small random salt so undock/redock at the
+	# same rep snapshot doesn't always pick the same line. The LLM is the
+	# real variety engine — this is the offline fallback.
+	var salt: int = randi() % FALLBACK_MECHANIC_GREETINGS.size()
+	var idx: int = (worst_tier.length() + best_tier.length() + salt) % FALLBACK_MECHANIC_GREETINGS.size()
+	# Substitute the ship name placeholder in case we templatize later.
+	var line: String = FALLBACK_MECHANIC_GREETINGS[idx]
+	return line.replace("{ship}", ship)
+
+# Render the mechanic intro panel. Pulls from the cache if available, else
+# picks a fallback immediately (no waiting). Call this every time the
+# maintenance submenu is rendered so the text is always in sync. Auto-plays
+# the line via TTS in Jenna's voice the FIRST time a new line shows —
+# subsequent submenu toggles with the same line don't re-play.
+func _render_mechanic_intro() -> void:
+	if not mechanic_intro_panel or not is_instance_valid(mechanic_intro_panel):
+		return
+	# Portrait: Jenna Kross lives at the bottom-right cell of MinorNPC02.png
+	# (see GlobalState.MINOR_NPCS). Sliced via get_minor_npc_portrait so
+	# the same atlas path is reused by gossip / pickup flows.
+	var portrait_tex: Texture2D = GlobalState.get_minor_npc_portrait("Jenna Kross")
+	if portrait_tex:
+		mechanic_portrait.texture = portrait_tex
+	# Resolve the line.
+	var line: String = _cached_mechanic_line
+	var line_changed: bool = false
+	if line.strip_edges() == "":
+		# No cache yet (LLM still in flight). Pick a fallback so the
+		# chat box is never empty.
+		line = _pick_fallback_mechanic_greeting(PLAYER_SHIP_NAME, _worst_reputation_tier(), _best_reputation_tier())
+		_cached_mechanic_line = line
+		_cached_mechanic_line_is_fallback = true
+	if line != _last_played_mechanic_line:
+		line_changed = true
+		_last_played_mechanic_line = line
+	mechanic_line_label.text = line
+	mechanic_intro_panel.visible = true
+	# Auto-play the line in Jenna's voice the first time we see it this
+	# dock. Suppressed on submenu re-entry (same line) so toggling
+	# between Services and Maintenance doesn't make her talk twice.
+	# The TTS path runs the line through the tone guard automatically
+	# (Jenna != Kaelen), so any LLM slip like "Shiny" gets rewritten to
+	# "Indy" before it hits the audio. We mirror the rewrite onto the
+	# on-screen label so the player sees the same text they hear.
+	if line_changed:
+		var display_line: String = GlobalState.apply_tone_guard(line, "af_aoede")
+		if display_line != line:
+			mechanic_line_label.text = display_line
+		TTSInterface.play_dialogue_audio(line, "af_aoede", 1.0)
 
 
 # ── Test quest: outpost pickup (DEBUG) ──────────────────────────────────────
@@ -1854,6 +2276,15 @@ func undock_player():
 	set_overview_collapsed(false)
 	# Clear any docked-message slot content so the next dock starts fresh.
 	clear_dock_message()
+	# Hide the mechanic intro panel and clear the cached greeting so the
+	# next dock regenerates a fresh line (player rep may have changed).
+	if mechanic_intro_panel and is_instance_valid(mechanic_intro_panel):
+		mechanic_intro_panel.visible = false
+	_cached_mechanic_line = ""
+	_cached_mechanic_line_is_fallback = false
+	_mechanic_precache_in_flight = false
+	_mechanic_request_id += 1  # Invalidate any in-flight LLM callback
+	_last_played_mechanic_line = ""
 	
 	# Stop voice dialogue audio if playing
 	TTSInterface.play_dialogue_audio("")
@@ -1953,6 +2384,9 @@ func _on_resize_handle_input(event: InputEvent):
 			overview_panel.anchor_left = target_left_pixel / viewport_w
 
 func show_target_marker(pos: Vector3):
+	# Don't pop the small crosshair while docked — dock UI owns the screen.
+	if GlobalState.player and GlobalState.player.get("is_docked"):
+		return
 	marker_pos_3d = pos
 	marker_active = true
 	marker_timer = 2.0 # Keep visible for 2 seconds to orient the player
@@ -1962,6 +2396,12 @@ func show_target_marker(pos: Vector3):
 
 func _update_target_marker_position():
 	if not target_marker: return
+	# Same suppression as the selection ring: while docked, keep the
+	# small crosshair hidden and let the dock UI own the screen.
+	if GlobalState.player and GlobalState.player.get("is_docked"):
+		marker_active = false
+		target_marker.visible = false
+		return
 	if not GlobalState.player or not is_instance_valid(GlobalState.player):
 		marker_active = false
 		target_marker.visible = false
@@ -2004,6 +2444,15 @@ func _on_target_marker_draw():
 
 func _update_selection_marker_position():
 	if not selection_marker: return
+	# Suppress the green target ring while docked at a station/outpost —
+	# the dock menu takes the screen, and a frozen reticle looks broken.
+	# We bail BEFORE doing any work so the marker keeps its last-drawn
+	# position if it was already hidden, and is forced hidden if it was
+	# visible. The moment is_docked flips false on undock, the normal
+	# path below re-shows and re-positions the marker on the next frame.
+	if GlobalState.player and GlobalState.player.get("is_docked"):
+		selection_marker.visible = false
+		return
 	var target = GlobalState.active_target
 	if not target or not is_instance_valid(target) or target.get("destroyed"):
 		selection_marker.visible = false
@@ -2344,6 +2793,19 @@ func show_dock_message(text: String, npc_name: String = "", color: Color = Color
 	if dock_message_tween and dock_message_tween.is_valid():
 		dock_message_tween.kill()
 	dock_message_slot.modulate.a = 1.0
+
+	# Tone guard for the on-screen text. The TTS path runs the same
+	# rewrite inside play_dialogue_audio, so this keeps the on-screen
+	# line and the spoken line in sync. Kaelen never reaches
+	# show_dock_message (her lines go through agent_dialogue_label),
+	# but the guard is a no-op for her voice anyway.
+	# No voice_id is available here, so derive from npc_name via
+	# GlobalState's minor-NPC registry. Falls back to neutral (i.e.
+	# guard runs) if unknown.
+	var display_voice: String = "neutral"
+	if npc_name != "" and GlobalState.MINOR_NPCS.has(npc_name):
+		display_voice = str(GlobalState.MINOR_NPCS[npc_name].get("voice_id", "neutral"))
+	text = GlobalState.apply_tone_guard(text, display_voice)
 
 	# Configure content.
 	dock_message_line.text = text

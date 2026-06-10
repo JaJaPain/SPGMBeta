@@ -63,6 +63,12 @@ func _on_target_changed(new_target: Node3D):
 			target_position = null
 
 func _unhandled_input(event: InputEvent):
+	# While docked the dock UI owns the screen — block any world-bound
+	# input (LMB fly-to, RMB targeting, camera orbit, autopilot keys).
+	# Control children of the dock menu still get their own _gui_input
+	# before this runs, so dock buttons keep working.
+	if is_docked:
+		return
 	# Autopilot override keys
 	if event.is_action_pressed("override_approach"):
 		var t = GlobalState.active_target

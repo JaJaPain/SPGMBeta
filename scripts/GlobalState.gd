@@ -778,3 +778,82 @@ func _add_mouse_action(action_name: String, button_index: int):
 		var event = InputEventMouseButton.new()
 		event.button_index = button_index
 		InputMap.action_add_event(action_name, event)
+
+# ── Dialogue Tone Guard ──────────────────────────────────────────────────────
+# "Shiny" is Broker Kaelen's vocative for the player pilot. She uses it
+# every line. Every other speaker in the game should NOT use it — it
+# leaks her voice onto Jenna, minor NPCs, future quest givers, and
+# anything else routed through the dialogue pipeline.
+#
+# This is a pure function — no state, no side effects. Safe to call from
+# any thread or signal handler. TTSInterface routes its text through
+# here, and any UI code that displays dialogue should too, so the
+# on-screen text and the spoken audio stay in sync.
+#
+# Kaelen's voice after faction resolution is "af_bella" — that's how
+# the call path identifies her. Anyone else gets the substitution.
+const KAELEN_VOICE_ID: String = "af_bella"
+
+# Substitutions for non-Kaelen speakers. Keyed on the source token
+# (case-insensitive, word-boundary aware). Each entry's "to" is tried
+# in order — first match wins. Add more rules here as more voice-leak
+# bugs show up.
+const TONE_REPLACEMENTS: Array = [
+	# "Shiny" → "Indy" (preserves the call-out feel; matches the
+	# player's ship class name, so it reads as "Indy pilot").
+	{ "from": "shiny", "to": ["indy"] },
+]
+
+# Returns true if the resolved voice_id is Kaelen's. Cheap pointer
+# check against KAELEN_VOICE_ID. Keep in sync with TTSInterface's
+# get_voice_for_faction("neutral") — if you add a new broker voice
+# for Kaelen, update both.
+static func is_kaelen_voice(voice_id: String) -> bool:
+	return voice_id == KAELEN_VOICE_ID
+
+# Apply all TONE_REPLACEMENTS rules to `text` for a non-Kaelen speaker.
+# Case-insensitive on the source token, but the replacement preserves
+# the original casing style of the source (Title Case → "Indy", lower →
+# "indy", upper → "INDY"). Word-boundary aware so we don't replace
+# "Shiny" inside "Shinyman" or "Mishiny". Pure function.
+static func apply_tone_guard(text: String, voice_id: String) -> String:
+	# Kaelen keeps her own voice untouched.
+	if is_kaelen_voice(voice_id):
+		return text
+	var out: String = text
+	for rule in TONE_REPLACEMENTS:
+		var from_token: String = rule["from"]
+		var to_options: Array = rule["to"]
+		# Build a word-boundary regex. (?i) for case-insensitive.
+		# \b on either side keeps it from matching mid-word. We then
+		# reconstruct the replacement in the original casing style.
+		var regex := RegEx.new()
+		regex.compile("(?i)\\b" + from_token + "\\b")
+		var matches := regex.search_all(out)
+		if matches.is_empty():
+			continue
+		# Replace from the back so earlier indices stay valid.
+		for i in range(matches.size() - 1, -1, -1):
+			var m: RegExMatch = matches[i]
+			var original: String = m.get_string()
+			# Pick the first option as the canonical replacement, then
+			# match the original's casing style: ALL CAPS → upper,
+			# Title Case → capitalized, else lower. Keeps the line
+			# reading naturally in either case.
+			var canonical: String = str(to_options[0])
+			var replacement: String = _match_tone_casing(canonical, original)
+			out = out.substr(0, m.get_start()) + replacement + out.substr(m.get_end())
+	return out
+
+# Internal: rebuild `replacement` in the casing style of `original`.
+# "SHINY" → "INDY", "Shiny" → "Indy", "shiny" → "indy". Falls back to
+# the canonical lowercase if the original's style doesn't match any
+# recognized pattern.
+static func _match_tone_casing(canonical: String, original: String) -> String:
+	if original.length() == 0:
+		return canonical
+	if original == original.to_upper() and original != original.to_lower():
+		return canonical.to_upper()
+	if original[0] >= "A" and original[0] <= "Z":
+		return canonical.capitalize()
+	return canonical
