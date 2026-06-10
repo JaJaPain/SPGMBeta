@@ -64,6 +64,28 @@ const MINOR_FACTIONS = {
 	"ironclad": { "color": Color(0.6, 0.6, 0.65),   "projectile": Color(0.8, 0.8, 0.85), "model": "aurelia",  "tint": Color(0.5, 0.5, 0.55) },
 }
 
+# ── Minor NPCs (quest givers, station contacts) ──────────────────────────────
+# 8 portrait slots across 2 source images. Each source image is a 2x2 grid:
+#   ┌───────────┬───────────┐
+#   │ top_left  │ top_right │
+#   ├───────────┼───────────┤
+#   │ bot_left  │ bot_right │
+#   └───────────┴───────────┘
+# Left column = male, right column = female. Bottom-right of NPC02 is the
+# Grease Monkeys mechanic (Jenna Kross).
+# Keys are display names — the same string the LLM quest-gen puts in
+# `agent_name`. Lookup by name returns image path + cell position.
+const MINOR_NPCS = {
+	"Cassen Vane":   { "image": "res://assets/MinorNPC01.png", "position": "top_left",     "vibe": "grizzled mercenary, scars and salt-and-pepper hair", "outpost": "kova" },
+	"Mariska Vonn":  { "image": "res://assets/MinorNPC01.png", "position": "top_right",    "vibe": "young blonde corporate fixer, white-and-gold outfit", "outpost": "iron_reach" },
+	"Korvin Shaw":   { "image": "res://assets/MinorNPC01.png", "position": "bottom_left",  "vibe": "military veteran, mohawk and full plate armor", "outpost": "kova" },
+	"Hana Quill":    { "image": "res://assets/MinorNPC01.png", "position": "bottom_right", "vibe": "tech analyst, glasses and dark teal jacket", "outpost": "iron_reach" },
+	"Oleg Stroud":   { "image": "res://assets/MinorNPC02.png", "position": "top_left",     "vibe": "syndicate accountant, bald with a monocle", "outpost": "iron_reach" },
+	"Dasha Invar":   { "image": "res://assets/MinorNPC02.png", "position": "top_right",    "vibe": "edgy mercenary, undercut and blue leather", "outpost": "kova" },
+	"Alaric Venn":   { "image": "res://assets/MinorNPC02.png", "position": "bottom_left",  "vibe": "corporate strategist, slicked hair and goatee", "outpost": "iron_reach" },
+	"Jenna Kross":   { "image": "res://assets/MinorNPC02.png", "position": "bottom_right", "vibe": "mechanic with red hair, goggles, and tattoos", "role": "Grease Monkeys mechanic" },
+}
+
 # ── Station Safe Zones ────────────────────────────────────────────────────────
 # NPCs won't initiate attacks on the player within safe zones if rep is above threshold.
 # Minor factions ignore safe zones — they're outlaws.
@@ -139,6 +161,56 @@ static func faction_info(faction_id: String) -> Dictionary:
 		"aurelia":  return {"name": "Aurelia",  "descriptor": "Syndicate", "abbrev": "AUR"}
 		"vanguard": return {"name": "Vanguard", "descriptor": "Military",  "abbrev": "VAN"}
 		_:          return {"name": faction_id.capitalize(), "descriptor": "Unknown", "abbrev": faction_id.substr(0, 3).to_upper()}
+
+# Returns the AtlasTexture for a minor NPC's portrait, sliced from its 2x2
+# source image at the cell position stored in MINOR_NPCS.
+# Returns null if the name isn't recognized or the image fails to load.
+static func get_minor_npc_portrait(npc_name: String) -> AtlasTexture:
+	if not MINOR_NPCS.has(npc_name):
+		return null
+	var npc: Dictionary = MINOR_NPCS[npc_name]
+	var image = load(npc["image"]) as Texture2D
+	if not image:
+		return null
+	var size: Vector2 = image.get_size()
+	var cell_w: float = size.x / 2.0
+	var cell_h: float = size.y / 2.0
+	var x: float = 0.0
+	var y: float = 0.0
+	match npc["position"]:
+		"top_left":     pass  # 0, 0
+		"top_right":    x = cell_w
+		"bottom_left":  y = cell_h
+		"bottom_right":
+			x = cell_w
+			y = cell_h
+	var atlas := AtlasTexture.new()
+	atlas.atlas = image
+	atlas.region = Rect2(x, y, cell_w, cell_h)
+	return atlas
+
+# Returns the list of minor NPC names stationed at a given outpost id
+# (e.g. "iron_reach", "kova"). Returns an empty array if no NPCs are
+# assigned. The mechanic (Jenna Kross) is excluded — she's at Grease Monkeys.
+static func get_minor_npcs_at_outpost(outpost_id: String) -> Array:
+	var result: Array = []
+	for npc_name in MINOR_NPCS:
+		if MINOR_NPCS[npc_name].get("outpost", "") == outpost_id:
+			result.append(npc_name)
+	return result
+
+# Returns the outpost id for a minor NPC, or "" if they aren't outpost-based
+# (e.g. the mechanic, who lives at Grease Monkeys).
+static func get_minor_npc_outpost(npc_name: String) -> String:
+	if not MINOR_NPCS.has(npc_name):
+		return ""
+	return MINOR_NPCS[npc_name].get("outpost", "")
+
+# Returns a random minor NPC name. Used for picking a quest-board contact
+# at an outpost when the player asks "who's hiring?"
+static func random_minor_npc_name() -> String:
+	var keys: Array = MINOR_NPCS.keys()
+	return keys[randi() % keys.size()]
 
 signal target_changed(new_target: Node3D)
 signal cargo_changed(new_cargo: float)
