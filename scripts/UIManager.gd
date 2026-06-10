@@ -22,6 +22,19 @@ var dock_label: Label
 # Background image for the dock panel — shown only when docked at a
 # repair_shop station, set to RepairShop.png for thematic flavor.
 var dock_background: TextureRect
+# Docked-message slot. Lives inside dock_panel between the title and
+# the button list. Used to surface flavor lines ("Hear Gossip") and
+# quest pickup responses (success/failure) in-context, so the player
+# doesn't have to look at the screen edges to see what just happened.
+# Hidden when no message is active. Replaces the screen-anchored
+# show_npc_dialogue_popup for the dock flow and routes the
+# outpost-side pickup messages off the corner show_hud_warning.
+var dock_message_slot: PanelContainer
+var dock_message_hbox: HBoxContainer
+var dock_message_portrait: TextureRect
+var dock_message_name: Label
+var dock_message_line: Label
+var dock_message_tween: Tween
 var sell_btn: Button
 var upgrade_cargo_btn: Button
 var upgrade_laser_btn: Button
@@ -634,7 +647,62 @@ func _create_dock_menu():
 	dock_label.text = "STATION SERVICES"
 	dock_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	vbox.add_child(dock_label)
-	
+
+	# Docked-message slot. Hidden by default; surfaces flavor lines
+	# (Hear Gossip) and quest pickup responses inside the dock panel.
+	# See show_dock_message() for the display + auto-dismiss logic.
+	dock_message_slot = PanelContainer.new()
+	dock_message_slot.visible = false
+	dock_message_slot.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	# Subtle style: translucent dark bg, no border. The portrait chip
+	# and name label carry the speaker identity color themselves.
+	var msg_style := StyleBoxFlat.new()
+	msg_style.bg_color = Color(0.05, 0.05, 0.08, 0.85)
+	msg_style.corner_radius_top_left = 4
+	msg_style.corner_radius_top_right = 4
+	msg_style.corner_radius_bottom_right = 4
+	msg_style.corner_radius_bottom_left = 4
+	msg_style.content_margin_left = 8
+	msg_style.content_margin_right = 8
+	msg_style.content_margin_top = 6
+	msg_style.content_margin_bottom = 6
+	dock_message_slot.add_theme_stylebox_override("panel", msg_style)
+	vbox.add_child(dock_message_slot)
+
+	dock_message_hbox = HBoxContainer.new()
+	dock_message_hbox.add_theme_constant_override("separation", 10)
+	dock_message_slot.add_child(dock_message_hbox)
+
+	dock_message_portrait = TextureRect.new()
+	dock_message_portrait.custom_minimum_size = Vector2(64, 64)
+	dock_message_portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	dock_message_portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	dock_message_portrait.visible = false  # hidden when message has no portrait
+	dock_message_hbox.add_child(dock_message_portrait)
+
+	var msg_text_vbox := VBoxContainer.new()
+	msg_text_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	msg_text_vbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	dock_message_hbox.add_child(msg_text_vbox)
+
+	dock_message_name = Label.new()
+	dock_message_name.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	dock_message_name.add_theme_font_size_override("font_size", 14)
+	dock_message_name.add_theme_color_override("font_shadow_color", Color.BLACK)
+	dock_message_name.add_theme_constant_override("shadow_outline_size", 2)
+	# Empty text by default — show_dock_message sets the actual
+	# speaker name. If npc_name is empty, we hide the name label.
+	msg_text_vbox.add_child(dock_message_name)
+
+	dock_message_line = Label.new()
+	dock_message_line.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	dock_message_line.autowrap_mode = TextServer.AUTOWRAP_WORD
+	dock_message_line.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	dock_message_line.add_theme_font_size_override("font_size", 16)
+	dock_message_line.add_theme_color_override("font_shadow_color", Color.BLACK)
+	dock_message_line.add_theme_constant_override("shadow_outline_size", 2)
+	msg_text_vbox.add_child(dock_message_line)
+
 	sell_btn = Button.new()
 	sell_btn.text = "Sell Ore (1 SC per m³)"
 	sell_btn.pressed.connect(_sell_ore)
@@ -1491,6 +1559,9 @@ func toggle_dock_menu(station: Node3D):
 # player clicks between Services and Maintenance. The Grease Monkeys
 # hangar image shows only while the maintenance submenu is active.
 func _render_dock_submenu() -> void:
+	# Clear any active docked message so a flavor line from the
+	# previous submenu doesn't bleed into the new one.
+	clear_dock_message()
 	# Outposts are remote stations with no sell/agent/maintenance. Only the
 	# dock actions that make sense there (test pickup, hear gossip) plus
 	# undock should appear in the services submenu.
@@ -1651,29 +1722,37 @@ func _on_test_pickup_part_pressed() -> void:
 	if not QuestManager.is_quest_active() \
 			or QuestManager.active_quest.get("objective_type", "") != "PICKUP_SPECIAL" \
 			or QuestManager.active_quest.get("picked_up", false):
-		show_hud_warning("No active pickup quest here. Start one at Grease Monkeys first.")
+		show_dock_message("No active pickup quest here. Start one at Grease Monkeys first.", "", Color(1.0, 0.45, 0.45))
 		return
 
 	# Map the docked outpost's node name to its id, then compare against the
 	# quest's target outpost. Refuses the pickup if the player is at the wrong station.
 	if not current_station or not is_instance_valid(current_station):
-		show_hud_warning("No station docked.")
+		show_dock_message("No station docked.", "", Color(1.0, 0.45, 0.45))
 		return
 	var docked_outpost_id: String = OUTPOST_NODE_TO_ID.get(current_station.name, "")
 	if docked_outpost_id == "":
-		show_hud_warning("Pickup can only happen at an outpost dock.")
+		show_dock_message("Pickup can only happen at an outpost dock.", "", Color(1.0, 0.45, 0.45))
 		return
 	var quest_outpost_id: String = QuestManager.active_quest.get("target_outpost", "")
 	if docked_outpost_id != quest_outpost_id:
-		show_hud_warning("Wrong outpost. The quest wants the part picked up at %s." % \
-			QuestManager.active_quest.get("target_outpost_display", quest_outpost_id))
+		show_dock_message(("Wrong outpost. The quest wants the part picked up at %s." % \
+			QuestManager.active_quest.get("target_outpost_display", quest_outpost_id)), "", Color(1.0, 0.45, 0.45))
 		return
 
 	var picked_part: String = QuestManager.active_quest.get("part_name", "the part")
 	var picked_npc: String = QuestManager.active_quest.get("target_npc", "the contact")
 	var success: bool = QuestManager.mark_pickup_complete()
 	if success:
-		show_hud_warning("Picked up '%s' from %s. Deliver to Grease Monkeys." % [picked_part, picked_npc])
+		# Success: use the NPC's flavor color so the message feels
+		# attached to the contact who just handed over the part. Pull
+		# portrait so the slot gets the NPC's face too.
+		var npc_color: Color = Color(0.85, 0.85, 0.85)
+		var npc_portrait: Texture2D = null
+		if GlobalState.MINOR_NPCS.has(picked_npc):
+			npc_color = GlobalState.MINOR_NPCS[picked_npc].get("flavor_color", npc_color)
+			npc_portrait = GlobalState.get_minor_npc_portrait(picked_npc)
+		show_dock_message("Picked up '%s' from %s. Deliver to Grease Monkeys." % [picked_part, picked_npc], picked_npc, npc_color, npc_portrait)
 	else:
 		push_warning("[TEST] mark_pickup_complete returned false at outpost dock")
 
@@ -1704,11 +1783,13 @@ func _on_hear_gossip_pressed() -> void:
 	var color: Color = flavor.get("color", Color.WHITE)
 	var portrait: Texture2D = GlobalState.get_minor_npc_portrait(npc_name)
 
-	# Enriched popup: portrait + name (in flavor color) + line. Auto-dismiss
-	# after 4.0s + 1.5s fade (longer than show_hud_info because there's
-	# more to read). The same line is also appended to the corner chatter
-	# feed by emit_npc_flavor so the player can re-read it.
-	show_npc_dialogue_popup(line, npc_name, color, portrait)
+	# Surface the line inside the dock panel itself (portrait + name
+	# in flavor color + the line). The slot holds for 7.0s + 1.5s
+	# fade — longer than the old show_npc_dialogue_popup because the
+	# player is staring at the dock menu and there's no rush. The
+	# line is also appended to the corner chatter feed by
+	# emit_npc_flavor so the player can re-read it.
+	show_dock_message(line, npc_name, color, portrait)
 	GlobalState.emit_npc_flavor(flavor)
 
 	# Refresh-on-use: queue the NPC's other flavor lines for background
@@ -1743,6 +1824,8 @@ func undock_player():
 	current_submenu = DockSubmenu.SERVICES
 	# Restore full overview when heading back into space
 	set_overview_collapsed(false)
+	# Clear any docked-message slot content so the next dock starts fresh.
+	clear_dock_message()
 	
 	# Stop voice dialogue audio if playing
 	TTSInterface.play_dialogue_audio("")
@@ -2213,6 +2296,83 @@ func show_npc_dialogue_popup(text: String, npc_name: String, color: Color, portr
 	tween.tween_interval(4.0)
 	tween.tween_property(panel, "modulate:a", 0.0, 1.5)
 	tween.tween_callback(panel.queue_free)
+
+# Show a message inside the dock panel (between title and buttons).
+# Used for "Hear Gossip" flavor lines and quest pickup responses —
+# anything contextual to the dock that the player should see without
+# looking at the screen edges or the corner HUD flash. Holds for
+# ~7.0s (longer than show_npc_dialogue_popup's 4.0s because the
+# player is staring at the dock menu anyway) then fades 1.5s and
+# hides the slot. Rapid repeated calls replace the prior message:
+# the active tween is killed and the slot re-populated.
+#
+# Pass npc_name="" + portrait=null for a generic system-style
+# message (e.g. pickup success/failure) — the speaker row collapses
+# and the line takes the full width.
+func show_dock_message(text: String, npc_name: String = "", color: Color = Color(0.85, 0.85, 0.85), portrait: Texture2D = null) -> void:
+	if not dock_message_slot or not is_instance_valid(dock_message_slot):
+		return
+	# Cancel any in-flight fade so a fresh message resets the timer.
+	if dock_message_tween and dock_message_tween.is_valid():
+		dock_message_tween.kill()
+	dock_message_slot.modulate.a = 1.0
+
+	# Configure content.
+	dock_message_line.text = text
+	dock_message_line.modulate = color
+	if npc_name != "":
+		dock_message_name.text = npc_name
+		dock_message_name.modulate = color
+		dock_message_name.visible = true
+	else:
+		dock_message_name.visible = false
+	if portrait:
+		dock_message_portrait.texture = portrait
+		# Subtle 1px border in the speaker color so the chip feels
+		# tied to the speaker (matches the show_npc_dialogue_popup
+		# chip styling).
+		var portrait_border := StyleBoxFlat.new()
+		portrait_border.bg_color = Color(0, 0, 0, 0)
+		portrait_border.border_width_left = 1
+		portrait_border.border_width_top = 1
+		portrait_border.border_width_right = 1
+		portrait_border.border_width_bottom = 1
+		portrait_border.border_color = Color(color.r, color.g, color.b, 0.7)
+		dock_message_portrait.add_theme_stylebox_override("normal", portrait_border)
+		dock_message_portrait.visible = true
+	else:
+		dock_message_portrait.texture = null
+		dock_message_portrait.visible = false
+
+	dock_message_slot.visible = true
+
+	# 7.0s hold + 1.5s fade. Long enough to read comfortably while
+	# the player is docked, short enough that a stale message won't
+	# linger after they tab away or undock quickly.
+	dock_message_tween = create_tween()
+	dock_message_tween.tween_interval(7.0)
+	dock_message_tween.tween_property(dock_message_slot, "modulate:a", 0.0, 1.5)
+	dock_message_tween.tween_callback(func() -> void:
+		if is_instance_valid(dock_message_slot):
+			dock_message_slot.visible = false
+			dock_message_slot.modulate.a = 1.0
+	})
+
+# Clear the docked-message slot immediately. Called on submenu change
+# and undock so an old flavor line or pickup response doesn't leak
+# into a different context.
+func clear_dock_message() -> void:
+	if not dock_message_slot or not is_instance_valid(dock_message_slot):
+		return
+	if dock_message_tween and dock_message_tween.is_valid():
+		dock_message_tween.kill()
+	dock_message_slot.visible = false
+	dock_message_slot.modulate.a = 1.0
+	dock_message_line.text = ""
+	dock_message_name.text = ""
+	dock_message_name.visible = false
+	dock_message_portrait.texture = null
+	dock_message_portrait.visible = false
 
 func _update_repair_button():
 	if not repair_btn: return
