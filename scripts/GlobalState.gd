@@ -75,43 +75,48 @@ const MINOR_FACTIONS = {
 # Grease Monkeys mechanic (Jenna Kross).
 # Keys are display names — the same string the LLM quest-gen puts in
 # `agent_name`. Lookup by name returns image path + cell position.
+# 8 portrait slots across 2 source images. Each source image is a 2x2 grid:
+#   MinorNPC01.png: top-left=Cassen, top-right=Mariska, bottom-left=Korvin, bottom-right=Hana
+#   MinorNPC02.png: top-left=Oleg,   top-right=Dasha,   bottom-left=Alaric, bottom-right=Jenna
+# Each NPC has a `voice_id` (Kokoro voice) and `voice_speed` (slight modifier
+# 0.85-1.10) for unique TTS voices — see skills/skill_using_tts_in_spacegame.md.
 const MINOR_NPCS = {
-	"Cassen Vane":   { "image": "res://assets/MinorNPC01.png", "position": "top_left",     "vibe": "grizzled mercenary, scars and salt-and-pepper hair", "outpost": "kova",       "flavor_color": Color(1.0, 0.6, 0.55), "flavor_lines": [
+	"Cassen Vane":   { "image": "res://assets/MinorNPC01.png", "position": "top_left",     "vibe": "grizzled mercenary, scars and salt-and-pepper hair", "outpost": "kova",       "voice_id": "am_onyx",   "voice_speed": 0.92, "flavor_color": Color(1.0, 0.6, 0.55), "flavor_lines": [
 		"Kova's got no rules, Shiny. Just people with guns and people without.",
 		"Vanguard patrols hit Sector 7 hard last week. Someone's paying them to.",
 		"Aurelia tried to recruit me once. I declined. Politely. With a knife.",
 	] },
-	"Mariska Vonn":  { "image": "res://assets/MinorNPC01.png", "position": "top_right",    "vibe": "young blonde corporate fixer, white-and-gold outfit", "outpost": "iron_reach", "flavor_color": Color(0.55, 0.85, 1.0), "flavor_lines": [
+	"Mariska Vonn":  { "image": "res://assets/MinorNPC01.png", "position": "top_right",    "vibe": "young blonde corporate fixer, white-and-gold outfit", "outpost": "iron_reach", "voice_id": "af_nicole", "voice_speed": 1.05, "flavor_color": Color(0.55, 0.85, 1.0), "flavor_lines": [
 		"Zenith's been running the numbers on you, Shiny. Try not to disappoint the spreadsheet.",
 		"Iron Reach's market is... complicated. Keep your credits close and your questions closer.",
 		"Aurelia's been sniffing our freight lanes again. Don't ask what they're moving.",
 	] },
-	"Korvin Shaw":   { "image": "res://assets/MinorNPC01.png", "position": "bottom_left",  "vibe": "military veteran, mohawk and full plate armor", "outpost": "kova",       "flavor_color": Color(0.9, 0.85, 0.5), "flavor_lines": [
+	"Korvin Shaw":   { "image": "res://assets/MinorNPC01.png", "position": "bottom_left",  "vibe": "military veteran, mohawk and full plate armor", "outpost": "kova",       "voice_id": "am_michael", "voice_speed": 0.95, "flavor_color": Color(0.9, 0.85, 0.5), "flavor_lines": [
 		"Vanguard trained me to follow orders. Kova taught me which orders to break.",
 		"The frontier doesn't need heroes. It needs survivors.",
 		"Zenith, Aurelia, Vanguard — pick your side, Shiny. Or pick none and die quietly.",
 	] },
-	"Hana Quill":    { "image": "res://assets/MinorNPC01.png", "position": "bottom_right", "vibe": "tech analyst, glasses and dark teal jacket", "outpost": "iron_reach", "flavor_color": Color(0.5, 0.95, 0.9), "flavor_lines": [
+	"Hana Quill":    { "image": "res://assets/MinorNPC01.png", "position": "bottom_right", "vibe": "tech analyst, glasses and dark teal jacket", "outpost": "iron_reach", "voice_id": "af_kore",   "voice_speed": 1.0,  "flavor_color": Color(0.5, 0.95, 0.9), "flavor_lines": [
 		"Vanguard's nav buoys are drifting. Either sloppy or probing. Neither's comforting.",
 		"Aurelia's encrypted traffic spiked 40% last cycle. Something's moving.",
 		"Need a firmware update? I can help. Need a favor? That costs more.",
 	] },
-	"Oleg Stroud":   { "image": "res://assets/MinorNPC02.png", "position": "top_left",     "vibe": "syndicate accountant, bald with a monocle", "outpost": "iron_reach", "flavor_color": Color(0.6, 1.0, 0.6), "flavor_lines": [
+	"Oleg Stroud":   { "image": "res://assets/MinorNPC02.png", "position": "top_left",     "vibe": "syndicate accountant, bald with a monocle", "outpost": "iron_reach", "voice_id": "am_fenrir", "voice_speed": 0.88, "flavor_color": Color(0.6, 1.0, 0.6), "flavor_lines": [
 		"Books don't lie, Shiny. The credits tell the whole story.",
 		"I keep the ledgers for half the brokers in this sector. Don't ask which half.",
 		"You want a receipt? That'll be extra. Aurelia taught me that.",
 	] },
-	"Dasha Invar":   { "image": "res://assets/MinorNPC02.png", "position": "top_right",    "vibe": "edgy mercenary, undercut and blue leather", "outpost": "kova",       "flavor_color": Color(1.0, 0.55, 0.7), "flavor_lines": [
+	"Dasha Invar":   { "image": "res://assets/MinorNPC02.png", "position": "top_right",    "vibe": "edgy mercenary, undercut and blue leather", "outpost": "kova",       "voice_id": "af_nova",   "voice_speed": 1.08, "flavor_color": Color(1.0, 0.55, 0.7), "flavor_lines": [
 		"Don't stare, Shiny. The tattoos have stories and none of them are short.",
 		"Kova's where the contracts go when everywhere else gets too hot.",
 		"You look like trouble. Good. Trouble pays well.",
 	] },
-	"Alaric Venn":   { "image": "res://assets/MinorNPC02.png", "position": "bottom_left",  "vibe": "corporate strategist, slicked hair and goatee", "outpost": "iron_reach", "flavor_color": Color(0.7, 0.75, 1.0), "flavor_lines": [
+	"Alaric Venn":   { "image": "res://assets/MinorNPC02.png", "position": "bottom_left",  "vibe": "corporate strategist, slicked hair and goatee", "outpost": "iron_reach", "voice_id": "am_liam",   "voice_speed": 0.98, "flavor_color": Color(0.7, 0.75, 1.0), "flavor_lines": [
 		"Iron Reach runs clean. Mostly. Don't dig into the manifest logs.",
 		"Zenith and Vanguard keep circling each other. We take notes and bill both sides.",
 		"You ever wonder who really runs this sector? Follow the supply contracts.",
 	] },
-	"Jenna Kross":   { "image": "res://assets/MinorNPC02.png", "position": "bottom_right", "vibe": "mechanic with red hair, goggles, and tattoos", "role": "Grease Monkeys mechanic", "flavor_color": Color(1.0, 0.85, 0.4), "flavor_lines": [
+	"Jenna Kross":   { "image": "res://assets/MinorNPC02.png", "position": "bottom_right", "vibe": "mechanic with red hair, goggles, and tattoos", "role": "Grease Monkeys mechanic", "voice_id": "af_aoede", "voice_speed": 1.0, "flavor_color": Color(1.0, 0.85, 0.4), "flavor_lines": [
 		"If it flies, I can fix it. If it doesn't fly, I can make it fly. Hand me the part.",
 		"Your thruster's running hot. I can hear it from here. Pay me now or pay me later.",
 		"The INDY Miner — classic chassis. Easy to work on, hard to keep running.",
@@ -245,11 +250,17 @@ static func random_minor_npc_name() -> String:
 	return keys[randi() % keys.size()]
 
 # Returns a random flavor line from a random NPC stationed at the given
-# outpost, along with the NPC's name and a chat-color. Drives the
-# "Hear Gossip" button at outpost docks — each click rotates to a
-# different NPC and a different line, so the player can keep clicking
+# outpost, along with the NPC's name, chat-color, and TTS voice data.
+# Drives the "Hear Gossip" button at outpost docks — each click rotates to
+# a different NPC and a different line, so the player can keep clicking
 # for variety. Returns an empty dict if the outpost has no NPCs assigned.
-# Returned shape: { "npc_name": String, "line": String, "color": Color }
+# Returned shape:
+#   { "npc_name": String, "line": String, "color": Color,
+#     "voice_id": String, "voice_speed": float }
+# `voice_id` is a Kokoro voice name (e.g. "am_onyx", "af_nicole"). The
+# default fallback is "af_bella" if an NPC has no voice data assigned.
+# `voice_speed` is a 0.85-1.10 modifier that subtly differentiates
+# voices that share an underlying voice family.
 static func get_random_npc_flavor_line(outpost_id: String) -> Dictionary:
 	var npcs: Array = get_minor_npcs_at_outpost(outpost_id)
 	if npcs.is_empty():
@@ -264,7 +275,58 @@ static func get_random_npc_flavor_line(outpost_id: String) -> Dictionary:
 		"npc_name": npc_name,
 		"line": line,
 		"color": npc.get("flavor_color", Color.WHITE),
+		"voice_id": npc.get("voice_id", "af_bella"),
+		"voice_speed": float(npc.get("voice_speed", 1.0)),
 	}
+
+# Returns the full set of (npc_name, line) pairs for every NPC at the
+# given outpost, across all NPCs and all flavor lines. Used by the
+# dock-time pre-cache so the first Hear Gossip click plays instantly
+# in each NPC's unique voice. Returns an empty array if the outpost
+# has no NPCs. Each entry is a Dictionary with the same shape as
+# get_random_npc_flavor_line plus a redundant `outpost_id` for
+# downstream logging.
+static func get_outpost_flavor_tts_lines(outpost_id: String) -> Array:
+	var result: Array = []
+	var npcs: Array = get_minor_npcs_at_outpost(outpost_id)
+	for npc_name in npcs:
+		var npc: Dictionary = MINOR_NPCS[npc_name]
+		var lines: Array = npc.get("flavor_lines", [])
+		var voice_id: String = npc.get("voice_id", "af_bella")
+		var voice_speed: float = float(npc.get("voice_speed", 1.0))
+		for line in lines:
+			result.append({
+				"npc_name": npc_name,
+				"line": line,
+				"color": npc.get("flavor_color", Color.WHITE),
+				"voice_id": voice_id,
+				"voice_speed": voice_speed,
+				"outpost_id": outpost_id,
+			})
+	return result
+
+# Returns the remaining flavor lines for one NPC (excluding the line that
+# was just played). Used by the "refresh-on-use" pre-cache: when a player
+# hears a line and the cache miss path runs, we want the *next* click to
+# hit cache, so we re-warm the NPC's other lines in the background.
+# If `just_played` is empty or not in the list, returns every line.
+static func get_other_flavor_lines_for_npc(npc_name: String, just_played: String) -> Array:
+	if not MINOR_NPCS.has(npc_name):
+		return []
+	var npc: Dictionary = MINOR_NPCS[npc_name]
+	var lines: Array = npc.get("flavor_lines", [])
+	var result: Array = []
+	for line in lines:
+		if line == just_played:
+			continue
+		result.append({
+			"npc_name": npc_name,
+			"line": line,
+			"color": npc.get("flavor_color", Color.WHITE),
+			"voice_id": npc.get("voice_id", "af_bella"),
+			"voice_speed": float(npc.get("voice_speed", 1.0)),
+		})
+	return result
 
 signal target_changed(new_target: Node3D)
 signal cargo_changed(new_cargo: float)
@@ -534,6 +596,24 @@ func spawn_mission_targets(faction_name: String, count: int):
 
 func emit_chatter(sender: String, message: String, color: Color):
 	system_chatter_received.emit(sender, message, color)
+
+# Emits an NPC flavor line to the corner chatter panel AND a dedicated
+# `npc_flavor_spoken` signal that carries the TTS routing data (voice
+# ID + speed). UIManager listens on `npc_flavor_spoken` to fire TTS
+# playback — system chatter (alerts, sensor sweeps) goes through
+# `emit_chatter` and stays text-only. Use this for any line that should
+# be spoken in the NPC's unique voice.
+# Expected flavor shape: { "npc_name", "line", "color", "voice_id", "voice_speed" }
+# (matches get_random_npc_flavor_line and get_outpost_flavor_tts_lines).
+signal npc_flavor_spoken(flavor: Dictionary)
+func emit_npc_flavor(flavor: Dictionary) -> void:
+	if flavor.is_empty():
+		return
+	var sender: String = flavor.get("npc_name", "Local")
+	var line: String = flavor.get("line", "")
+	var color: Color = flavor.get("color", Color.WHITE)
+	system_chatter_received.emit(sender, line, color)
+	npc_flavor_spoken.emit(flavor)
 
 func adjust_reputation(faction_name: String, amount: float):
 	if reputations.has(faction_name):

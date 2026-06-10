@@ -80,6 +80,12 @@ var cached_quest_data: Dictionary = {}
 var cached_quest_is_fallback: bool = false
 var is_waiting_for_agent_board: bool = false
 
+# Per-outpost count of TTS flavor lines we have already pre-cached
+# for the player's current session. Used as a quick diagnostic in
+# [TRACE] logs and to gate refresh-on-use (no point re-warming lines
+# that are already in the cache). Resets implicitly on scene reload.
+var _outpost_flavor_precached: Dictionary = {}
+
 # LLM-generated Kaelen handoff line for the currently-cached quest.
 # Empty string means "not yet fetched" or "fetch failed — fall back to canned 5".
 var cached_unique_intro: String = ""
@@ -391,6 +397,11 @@ func _create_hud():
 	
 	# Connect signal to print system chatter
 	GlobalState.system_chatter_received.connect(add_chat_message)
+
+	# NPC flavor lines: chatter to the corner log AND speak the line
+	# in the NPC's unique Kokoro voice. System chatter (alerts, sensor
+	# sweeps) doesn't go through this path so it stays text-only.
+	GlobalState.npc_flavor_spoken.connect(_on_npc_flavor_spoken)
 	
 	# Initial welcome message
 	add_chat_message("SYSTEM", "Radio channels open. Encryption secure.", Color(0.0, 0.9, 0.9))
@@ -1456,6 +1467,23 @@ func toggle_dock_menu(station: Node3D):
 			print("[TRACE] [UIManager] Player docked. Pre-caching agent quest in the background.")
 			QuestManager.request_new_quest("neutral", _on_background_quest_generated)
 
+		# Pre-cache this outpost's NPC flavor lines for TTS so the
+		# first Hear Gossip click plays instantly in each NPC's
+		# unique voice. Background — does not block the dock UI.
+		# Refresh-on-use (when a line is played from cache-miss
+		# path) re-warms the remaining lines for that NPC.
+		if is_outpost and outpost_id != "":
+			var prev_count: int = int(_outpost_flavor_precached.get(outpost_id, 0))
+			print("[TRACE] [UIManager] Pre-caching TTS for outpost '", outpost_id, "' flavor lines (", prev_count, " pre-warmed this session).")
+			var flavor_lines: Array = GlobalState.get_outpost_flavor_tts_lines(outpost_id)
+			for entry in flavor_lines:
+				# Pass clean_text + per-NPC voice + speed. cache_dialogue_audio
+				# will dedupe via the "<voice>|<text>" cache key, so
+				# the dock-time pre-cache and the refresh-on-use
+				# paths both no-op on already-cached lines.
+				TTSInterface.cache_dialogue_audio(entry["line"], entry["voice_id"], entry["voice_speed"])
+			_outpost_flavor_precached[outpost_id] = prev_count + flavor_lines.size()
+
 
 # Render the current submenu's button set. Called on dock AND when the
 # player clicks between Services and Maintenance. The Grease Monkeys
@@ -1649,9 +1677,12 @@ func _on_test_pickup_part_pressed() -> void:
 
 
 # Outpost flavor button. Consumes GlobalState.get_random_npc_flavor_line for
-# the currently-docked outpost, flashes the line as a HUD warning, and
-# appends it to the corner chatter feed (persistent) so the player can
-# re-read it. Re-rolling picks a different NPC/line.
+# the currently-docked outpost, shows the line in a portrait+name popup
+# tinted with the NPC's own color, appends it to the corner chatter feed
+# (persistent), and speaks the line in the NPC's unique Kokoro voice via
+# the npc_flavor_spoken signal. Re-rolling picks a different NPC/line.
+# Refresh-on-use: after the line plays, the NPC's other flavor lines are
+# pre-cached in the background so the next click hits cache.
 func _on_hear_gossip_pressed() -> void:
 	if not current_station or not is_instance_valid(current_station):
 		show_hud_warning("No station docked.")
@@ -1669,12 +1700,37 @@ func _on_hear_gossip_pressed() -> void:
 	var npc_name: String = flavor.get("npc_name", "Local")
 	var line: String = flavor.get("line", "")
 	var color: Color = flavor.get("color", Color.WHITE)
-	# Soft flash in the NPC's own color so it reads as dialogue, not as an
-	# error. show_hud_warning is reserved for actual error states (wrong
-	# outpost, no quest, etc.) and stays red. emit_chatter appends the same
-	# line to the persistent corner log.
-	show_hud_info(line, color)
-	GlobalState.emit_chatter(npc_name, line, color)
+	var portrait: Texture2D = GlobalState.get_minor_npc_portrait(npc_name)
+
+	# Enriched popup: portrait + name (in flavor color) + line. Auto-dismiss
+	# after 4.0s + 1.5s fade (longer than show_hud_info because there's
+	# more to read). The same line is also appended to the corner chatter
+	# feed by emit_npc_flavor so the player can re-read it.
+	show_npc_dialogue_popup(line, npc_name, color, portrait)
+	GlobalState.emit_npc_flavor(flavor)
+
+	# Refresh-on-use: queue the NPC's other flavor lines for background
+	# TTS pre-cache. By the time the player clicks Hear Gossip again
+	# (or the same NPC speaks an ambient line), the next line is
+	# likely cached and plays instantly.
+	var other_lines: Array = GlobalState.get_other_flavor_lines_for_npc(npc_name, line)
+	for entry in other_lines:
+		TTSInterface.cache_dialogue_audio(entry["line"], entry["voice_id"], entry["voice_speed"])
+
+
+# Signal handler for GlobalState.npc_flavor_spoken. Speaks the line in
+# the NPC's unique Kokoro voice. Connection established in
+# _create_chat_window_panel alongside the system_chatter_received
+# connection.
+func _on_npc_flavor_spoken(flavor: Dictionary) -> void:
+	if flavor.is_empty():
+		return
+	var line: String = flavor.get("line", "")
+	if line == "":
+		return
+	var voice_id: String = flavor.get("voice_id", "af_bella")
+	var voice_speed: float = float(flavor.get("voice_speed", 1.0))
+	TTSInterface.play_dialogue_audio(line, voice_id, voice_speed)
 
 
 func undock_player():
@@ -2055,6 +2111,106 @@ func show_hud_info(text: String, tint: Color = Color(0.0, 0.85, 1.0)):
 	tween.tween_interval(2.5)
 	tween.tween_property(info_label, "modulate:a", 0.0, 1.5)
 	tween.tween_callback(info_label.queue_free)
+
+# Soft NPC dialogue popup. Used for flavor chatter ("Hear Gossip",
+# ambient chatter lines) — enriches the show_hud_info flash with a
+# small portrait thumbnail, the speaker's name in their flavor color,
+# and the line beneath. Auto-dismisses after 4.0s hold + 1.5s fade
+# (longer hold than show_hud_info because there's more to read).
+# Centered horizontally, ~96px below the top edge — visually similar
+# to show_hud_info so the player doesn't have to learn a new layout.
+# `portrait` is a Texture2D (typically an AtlasTexture from
+# GlobalState.get_minor_npc_portrait). Pass null to skip the portrait
+# box (e.g. for a generic system message that needs a name only).
+func show_npc_dialogue_popup(text: String, npc_name: String, color: Color, portrait: Texture2D = null) -> void:
+	# Translucent dark panel for definition. Drops a small
+	# background that the centered text can sit on so the line
+	# stays readable against busy starfield backgrounds.
+	var panel := Panel.new()
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.05, 0.05, 0.08, 0.75)
+	style.border_width_left = 2
+	style.border_width_top = 2
+	style.border_width_right = 2
+	style.border_width_bottom = 2
+	style.border_color = Color(color.r, color.g, color.b, 0.85)
+	style.corner_radius_top_left = 6
+	style.corner_radius_top_right = 6
+	style.corner_radius_bottom_right = 6
+	style.corner_radius_bottom_left = 6
+	style.content_margin_left = 12
+	style.content_margin_right = 12
+	style.content_margin_top = 8
+	style.content_margin_bottom = 8
+	panel.add_theme_stylebox_override("panel", style)
+
+	# Center-top, 600px wide max. Height grows with content.
+	panel.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	panel.offset_left = -300
+	panel.offset_right = 300
+	panel.offset_top = 60
+	panel.offset_bottom = 60
+	panel.custom_minimum_size = Vector2(600, 0)
+	add_child(panel)
+
+	# HBox: portrait (96px) + 12px spacer + VBox(name, line)
+	var hbox := HBoxContainer.new()
+	hbox.set_anchors_preset(Control.PRESET_FULL_RECT)
+	hbox.offset_left = 0
+	hbox.offset_right = 0
+	hbox.offset_top = 0
+	hbox.offset_bottom = 0
+	hbox.add_theme_constant_override("separation", 12)
+	panel.add_child(hbox)
+
+	if portrait:
+		var portrait_rect := TextureRect.new()
+		portrait_rect.custom_minimum_size = Vector2(64, 64)
+		portrait_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		portrait_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		portrait_rect.texture = portrait
+		# Subtle 1px border in the NPC color so the chip feels tied
+		# to the speaker.
+		var portrait_border := StyleBoxFlat.new()
+		portrait_border.bg_color = Color(0, 0, 0, 0)
+		portrait_border.border_width_left = 1
+		portrait_border.border_width_top = 1
+		portrait_border.border_width_right = 1
+		portrait_border.border_width_bottom = 1
+		portrait_border.border_color = Color(color.r, color.g, color.b, 0.6)
+		portrait_rect.add_theme_stylebox_override("normal", portrait_border)
+		hbox.add_child(portrait_rect)
+
+	var text_vbox := VBoxContainer.new()
+	text_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	text_vbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	hbox.add_child(text_vbox)
+
+	var name_label := Label.new()
+	name_label.text = npc_name
+	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	name_label.add_theme_color_override("font_color", color)
+	name_label.add_theme_font_size_override("font_size", 16)
+	name_label.add_theme_color_override("font_shadow_color", Color.BLACK)
+	name_label.add_theme_constant_override("shadow_outline_size", 3)
+	text_vbox.add_child(name_label)
+
+	var line_label := Label.new()
+	line_label.text = text
+	line_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	line_label.autowrap_mode = TextServer.AUTOWRAP_WORD
+	line_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	line_label.add_theme_font_size_override("font_size", 18)
+	line_label.add_theme_color_override("font_shadow_color", Color.BLACK)
+	line_label.add_theme_constant_override("shadow_outline_size", 3)
+	text_vbox.add_child(line_label)
+
+	# Tween: 4.0s hold then 1.5s fade. Slightly longer than
+	# show_hud_info (2.5s) because the player has more to read.
+	var tween := create_tween()
+	tween.tween_interval(4.0)
+	tween.tween_property(panel, "modulate:a", 0.0, 1.5)
+	tween.tween_callback(panel.queue_free)
 
 func _update_repair_button():
 	if not repair_btn: return

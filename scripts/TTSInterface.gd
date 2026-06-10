@@ -8,6 +8,15 @@ var tts_request_time: float = 0.0
 
 var last_interaction_time: float = 0.0
 var last_interaction_name: String = ""
+# Cache key shape: "<voice_id>|<text>" (changed from text-only at the
+# per-NPC voice refactor). The same line spoken in two NPC voices
+# caches separately. For callers that don't override the voice, we use
+# the resolved Kokoro voice for the faction — so legacy "neutral"
+# callers key under "af_bella|<text>", which still has a unique key
+# per text and matches the old behavior on the lookup side.
+# (Old caller's existing cache entries on disk are NOT carried over
+# since the project doesn't persist TTS cache between sessions — this
+# is a one-session in-memory cache only.)
 var tts_audio_cache: Dictionary = {}
 
 signal cache_queue_completed()
@@ -52,7 +61,29 @@ func _ready():
 	cache_dialogue_audio("Pleasure doing business with you, pilot. Payout transferred and brokerage fee deducted. Check back soon.", "neutral")
 	cache_dialogue_audio("Contract dumped? You're costing me credit margins. I don't forget when people waste my time.", "neutral")
 
-func play_dialogue_audio(text: String, faction: String = "neutral"):
+# Play a line of dialogue. Legacy signature kept for the Kaelen/quest paths:
+#   play_dialogue_audio(text, faction)
+# Per-NPC callers use the new signature:
+#   play_dialogue_audio(text, voice_id_override, speed_override)
+# If `voice_id_override` is empty the faction is resolved via
+# get_voice_for_faction(). Speed defaults to 1.0.
+# Cache key is "<voice>|<cleaned_text>" so different voices never
+# collide on the same line.
+func play_dialogue_audio(text: String, voice_id_override: Variant = "neutral", speed_override: float = -1.0):
+	# Support legacy call: play_dialogue_audio(text, faction_string)
+	# Detect by checking if voice_id_override is a known faction OR if
+	# the caller passed a 2-arg combo. We resolve the voice from
+	# either the explicit override (per-NPC) or the faction (legacy).
+	var voice_id: String
+	if typeof(voice_id_override) == TYPE_STRING and (voice_id_override == "" or _is_known_faction(voice_id_override)):
+		var faction: String = voice_id_override
+		voice_id = get_voice_for_faction(faction)
+		speed_override = 1.0
+	else:
+		voice_id = str(voice_id_override)
+		if speed_override < 0.0:
+			speed_override = 1.0
+
 	tts_request_time = Time.get_ticks_msec()
 	
 	if is_requesting:
@@ -74,9 +105,10 @@ func play_dialogue_audio(text: String, faction: String = "neutral"):
 	if last_interaction_time > 0.0:
 		elapsed_str = " (Elapsed since '%s': %.3fs)" % [last_interaction_name, (tts_request_time - last_interaction_time) / 1000.0]
 		
+	var cache_key: String = voice_id + "|" + clean_text
 	# Check cache first!
-	if tts_audio_cache.has(clean_text):
-		var stream = tts_audio_cache[clean_text]
+	if tts_audio_cache.has(cache_key):
+		var stream = tts_audio_cache[cache_key]
 		audio_player.stream = stream
 		audio_player.play()
 		AudioManager.duck_audio() # Duck background audio
@@ -84,43 +116,59 @@ func play_dialogue_audio(text: String, faction: String = "neutral"):
 		var total_elapsed_str = ""
 		if last_interaction_time > 0.0:
 			total_elapsed_str = " (Total since '%s': %.3fs)" % [last_interaction_name, (play_now - last_interaction_time) / 1000.0]
-		print("[TRACE] [TTSInterface] play_dialogue_audio CACHE HIT at: %d ms%s. Playing immediately!%s" % [tts_request_time, elapsed_str, total_elapsed_str])
+		print("[TRACE] [TTSInterface] play_dialogue_audio CACHE HIT at: %d ms%s. voice=%s. Playing immediately!%s" % [tts_request_time, elapsed_str, voice_id, total_elapsed_str])
 		return
 		
-	print("[TRACE] [TTSInterface] play_dialogue_audio CACHE MISS at: %d ms%s" % [tts_request_time, elapsed_str])
+	print("[TRACE] [TTSInterface] play_dialogue_audio CACHE MISS at: %d ms%s. voice=%s" % [tts_request_time, elapsed_str, voice_id])
 	
 	is_requesting = true
-	var voice_name = get_voice_for_faction(faction)
 	var payload = {
 		"text": clean_text,
-		"voice": voice_name,
-		"speed": 1.0
+		"voice": voice_id,
+		"speed": speed_override
 	}
 	var json_str = JSON.stringify(payload)
 	var headers = ["Content-Type: application/json"]
 	
 	# Print statement to help debugging in console
-	print("[TTSInterface] Requesting speech for: ", clean_text, " using voice: ", voice_name)
+	print("[TTSInterface] Requesting speech for: ", clean_text, " using voice: ", voice_id, " speed: ", speed_override)
 	var err = http_request.request(TTS_URL, headers, HTTPClient.METHOD_POST, json_str)
 	if err != OK:
 		print("[TTSInterface] Failed to initiate HTTP request. Error code: ", err)
 		is_requesting = false
 
-func cache_dialogue_audio(text: String, faction: String = "neutral"):
+# Background pre-cache. Same call-shape change as play_dialogue_audio:
+#   cache_dialogue_audio(text, faction)              # legacy, resolves to af_bella
+#   cache_dialogue_audio(text, voice_id, speed)      # per-NPC, speed is the override
+# Empty voice_id means "use faction". Speed <0 means "default 1.0".
+func cache_dialogue_audio(text: String, voice_id_or_faction: String = "neutral", speed: float = -1.0):
 	text = text.strip_edges()
 	var clean_text = clean_dialogue_text(text)
-	if clean_text == "" or tts_audio_cache.has(clean_text):
+	if clean_text == "":
+		return
+	# Resolve voice_id from the second argument
+	var voice_id: String
+	if _is_known_faction(voice_id_or_faction):
+		voice_id = get_voice_for_faction(voice_id_or_faction)
+		speed = 1.0
+	else:
+		voice_id = voice_id_or_faction if voice_id_or_faction != "" else "af_bella"
+		if speed < 0.0:
+			speed = 1.0
+
+	var cache_key: String = voice_id + "|" + clean_text
+	if tts_audio_cache.has(cache_key):
 		return
 		
 	if not tts_connected:
 		var already_queued = false
 		for item in cache_queue:
-			if item.text == clean_text:
+			if item.key == cache_key:
 				already_queued = true
 				break
 		if not already_queued:
-			cache_queue.append({"text": clean_text, "faction": faction})
-			print("[TRACE] [TTSInterface] Queueing cache request (TTS not connected): ", clean_text.hash())
+			cache_queue.append({"key": cache_key, "text": clean_text, "voice_id": voice_id, "speed": speed})
+			print("[TRACE] [TTSInterface] Queueing cache request (TTS not connected): ", clean_text.hash(), " voice=", voice_id)
 		return
 		
 	# Create a dynamic HTTPRequest node for caching
@@ -128,25 +176,24 @@ func cache_dialogue_audio(text: String, faction: String = "neutral"):
 	add_child(temp_http)
 	temp_http.timeout = 15.0
 	
-	var voice_name = get_voice_for_faction(faction)
 	var payload = {
 		"text": clean_text,
-		"voice": voice_name,
-		"speed": 1.0
+		"voice": voice_id,
+		"speed": speed
 	}
 	var json_str = JSON.stringify(payload)
 	var headers = ["Content-Type: application/json"]
 	
 	active_cache_requests += 1
-	print("[TRACE] [TTSInterface] Background caching started for text hash: ", clean_text.hash(), " (len: ", clean_text.length(), "), active: ", active_cache_requests, " using voice: ", voice_name)
+	print("[TRACE] [TTSInterface] Background caching started for text hash: ", clean_text.hash(), " (len: ", clean_text.length(), "), active: ", active_cache_requests, " using voice: ", voice_id, " speed: ", speed)
 	
 	temp_http.request_completed.connect(func(result, response_code, headers, body):
 		temp_http.queue_free()
 		if result == HTTPRequest.RESULT_SUCCESS and response_code == 200:
 			var stream = load_wav_from_buffer(body)
 			if stream:
-				tts_audio_cache[clean_text] = stream
-				print("[TRACE] [TTSInterface] Background caching completed for text hash: ", clean_text.hash())
+				tts_audio_cache[cache_key] = stream
+				print("[TRACE] [TTSInterface] Background caching completed for text hash: ", clean_text.hash(), " voice=", voice_id)
 			else:
 				print("[TTSInterface] Background cache parsing failed for text hash: ", clean_text.hash())
 		else:
@@ -166,6 +213,17 @@ func cache_dialogue_audio(text: String, faction: String = "neutral"):
 		if active_cache_requests <= 0:
 			active_cache_requests = 0
 			cache_queue_completed.emit()
+
+# Returns true if the given string matches one of the legacy faction
+# names that callers pass as the 2nd arg of play_dialogue_audio /
+# cache_dialogue_audio. Used by the voice_id override logic to
+# disambiguate "this is a faction" from "this is a Kokoro voice id".
+func _is_known_faction(s: String) -> bool:
+	match s.to_lower():
+		"zenith", "aurelia", "vanguard", "neutral", "":
+			return true
+		_:
+			return false
 
 func clean_dialogue_text(text: String) -> String:
 	# Strip off the "--- Contract Details ---" block or other metadata to only speak narrative
@@ -301,11 +359,22 @@ func _discover_and_verify_tts():
 			tts_connected = true
 			tts_connection_established.emit()
 			
-			# Process queued cache requests
+			# Process queued cache requests. queue items carry the
+			# resolved voice_id + speed (set by cache_dialogue_audio),
+			# not a faction — re-issue them via the legacy faction
+			# path is wrong here. We re-call cache_dialogue_audio with
+			# the resolved voice_id, but cache_dialogue_audio will
+			# re-resolve via _is_known_faction, which is false for
+			# voice ids, so we need to skip the legacy fast path.
 			var queue_copy = cache_queue.duplicate()
 			cache_queue.clear()
 			for item in queue_copy:
-				cache_dialogue_audio(item.text, item.faction)
+				# Bypass the (faction-resolving) public method and call
+				# the underlying work directly. The simplest way is to
+				# call the public method with the voice_id — it will
+				# be treated as a voice id (not a faction) and routed
+				# correctly.
+				cache_dialogue_audio(item.text, item.voice_id, item.speed)
 		else:
 			# If first attempt failed, start the server process
 			if tts_connection_attempts == 1:
