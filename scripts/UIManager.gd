@@ -29,6 +29,8 @@ var repair_btn: Button
 var agent_service_btn: Button
 var maintenance_bay_btn: Button
 var back_to_services_btn: Button
+var test_pickup_btn: Button
+var test_deliver_btn: Button
 
 # Dock submenu state. Every dockable station (main station, outposts)
 # shows the same two submenus:
@@ -639,7 +641,22 @@ func _create_dock_menu():
 	repair_btn.text = "Repair Ship"
 	repair_btn.pressed.connect(_repair_ship)
 	vbox.add_child(repair_btn)
-	
+
+	# ── Test: outpost pickup quest (DEBUG) ─────────────────────────────────
+	# Triggers a random special-cargo pickup: picks a random outpost and a
+	# random NPC stationed there, loads a random part into the hold, and
+	# marks the mechanic as the destination. Use the "Test: Deliver" button
+	# to clear the cargo and complete the test cycle. Rerun by clicking again.
+	test_pickup_btn = Button.new()
+	test_pickup_btn.text = "Test: Start Outpost Pickup (random)"
+	test_pickup_btn.pressed.connect(_on_test_pickup_pressed)
+	vbox.add_child(test_pickup_btn)
+
+	test_deliver_btn = Button.new()
+	test_deliver_btn.text = "Test: Deliver Special Cargo"
+	test_deliver_btn.pressed.connect(_on_test_deliver_pressed)
+	vbox.add_child(test_deliver_btn)
+
 	agent_service_btn = Button.new()
 	agent_service_btn.text = "Talk to Agent"
 	agent_service_btn.pressed.connect(_on_talk_to_agent_pressed)
@@ -1437,6 +1454,8 @@ func _render_dock_submenu() -> void:
 		upgrade_cargo_btn.visible = true
 		upgrade_laser_btn.visible = true
 		repair_btn.visible = true
+		test_pickup_btn.visible = true
+		test_deliver_btn.visible = true
 		back_to_services_btn.visible = true
 		if dock_background:
 			if dock_background.texture == null:
@@ -1451,6 +1470,8 @@ func _render_dock_submenu() -> void:
 		upgrade_cargo_btn.visible = false
 		upgrade_laser_btn.visible = false
 		repair_btn.visible = false
+		test_pickup_btn.visible = false
+		test_deliver_btn.visible = false
 		back_to_services_btn.visible = false
 		if dock_background:
 			dock_background.visible = false
@@ -1470,6 +1491,71 @@ func _on_maintenance_bay_pressed() -> void:
 func _on_back_to_services_pressed() -> void:
 	current_submenu = DockSubmenu.SERVICES
 	_render_dock_submenu()
+
+
+# ── Test quest: outpost pickup (DEBUG) ──────────────────────────────────────
+# Rerunnable debug feature. Each click of "Test: Start Outpost Pickup"
+# picks a random outpost + random NPC at that outpost + random part name,
+# clears any existing cargo, and loads the part as a special cargo item
+# via GlobalState.accept_special. Use "Test: Deliver" to complete the
+# cycle and clear the hold.
+
+const TEST_OUTPOST_IDS = ["iron_reach", "kova"]
+const TEST_OUTPOST_DISPLAY = {
+	"iron_reach": "Outpost Iron Reach",
+	"kova":      "Outpost Kova",
+}
+const TEST_PART_NAMES = [
+	"Plasma Coupler Mk II",
+	"Hydraulic Sealant Cartridge",
+	"Firmware Module — Nav Compute v3.1",
+	"Quantum Drive Bypass Coil",
+	"Shield Capacitor Array",
+	"Sensor Calibration Kit",
+	"Antimatter Injector Valve",
+	"Thrust Vectoring Servo",
+]
+const TEST_PICKUP_REWARD = 200  # credits awarded on "deliver" for test runs
+
+func _on_test_pickup_pressed() -> void:
+	# 1) Random outpost
+	var outpost_id: String = TEST_OUTPOST_IDS[randi() % TEST_OUTPOST_IDS.size()]
+	var outpost_display: String = TEST_OUTPOST_DISPLAY[outpost_id]
+
+	# 2) Random NPC stationed at that outpost
+	var npcs: Array = GlobalState.get_minor_npcs_at_outpost(outpost_id)
+	if npcs.is_empty():
+		push_warning("[TEST] No NPCs assigned to outpost " + outpost_id)
+		return
+	var npc_name: String = npcs[randi() % npcs.size()]
+
+	# 3) Random part
+	var part_name: String = TEST_PART_NAMES[randi() % TEST_PART_NAMES.size()]
+
+	# 4) Clean slate — any prior ore or special cargo is dropped so the
+	#    rerun produces predictable state.
+	GlobalState.clear_cargo()
+
+	# 5) Load the special cargo
+	var description: String = "Pickup from %s at %s. Deliver to Jenna Kross at Grease Monkeys." % [npc_name, outpost_display]
+	var success: bool = GlobalState.accept_special(
+		part_name,
+		description,
+		outpost_display,
+		"Grease Monkeys"
+	)
+	if success:
+		print("[TEST] Pickup quest started: '%s' from %s (%s)" % [part_name, npc_name, outpost_display])
+	else:
+		push_warning("[TEST] Failed to accept special cargo")
+
+func _on_test_deliver_pressed() -> void:
+	if GlobalState.cargo_type != GlobalState.CargoType.SPECIAL:
+		return
+	var part_name: String = GlobalState.cargo_special.get("name", "(unknown)")
+	GlobalState.clear_cargo()
+	GlobalState.player_credits += TEST_PICKUP_REWARD
+	print("[TEST] Delivered '%s' to Grease Monkeys. +%d SC." % [part_name, TEST_PICKUP_REWARD])
 
 
 func undock_player():
