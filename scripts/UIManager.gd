@@ -648,12 +648,12 @@ func _create_dock_menu():
 	# marks the mechanic as the destination. Use the "Test: Deliver" button
 	# to clear the cargo and complete the test cycle. Rerun by clicking again.
 	test_pickup_btn = Button.new()
-	test_pickup_btn.text = "Test: Start Outpost Pickup (random)"
+	test_pickup_btn.text = "Test: Start Pickup Quest"
 	test_pickup_btn.pressed.connect(_on_test_pickup_pressed)
 	vbox.add_child(test_pickup_btn)
 
 	test_deliver_btn = Button.new()
-	test_deliver_btn.text = "Test: Deliver Special Cargo"
+	test_deliver_btn.text = "Test: Deliver Part"
 	test_deliver_btn.pressed.connect(_on_test_deliver_pressed)
 	vbox.add_child(test_deliver_btn)
 
@@ -1535,27 +1535,46 @@ func _on_test_pickup_pressed() -> void:
 	# 4) Clean slate — any prior ore or special cargo is dropped so the
 	#    rerun produces predictable state.
 	GlobalState.clear_cargo()
+	show_hud_warning("Test: starting pickup quest for '%s' from %s @ %s" % [part_name, npc_name, outpost_display])
 
-	# 5) Load the special cargo
-	var description: String = "Pickup from %s at %s. Deliver to Jenna Kross at Grease Monkeys." % [npc_name, outpost_display]
-	var success: bool = GlobalState.accept_special(
-		part_name,
-		description,
-		outpost_display,
-		"Grease Monkeys"
-	)
-	if success:
-		print("[TEST] Pickup quest started: '%s' from %s (%s)" % [part_name, npc_name, outpost_display])
-	else:
-		push_warning("[TEST] Failed to accept special cargo")
+	# 5) Build a PICKUP_SPECIAL quest dict and hand it to QuestManager.
+	#    Cargo is NOT loaded here — it loads when the player actually picks
+	#    the part up at the outpost (mark_pickup_complete from the dock UI).
+	var quest_data: Dictionary = {
+		"title": "Test: %s Pickup" % part_name,
+		"faction": "neutral",
+		"agent_name": "Jenna Kross",
+		"dialogue": "Test debug quest. Pick up the part at %s and bring it back to Grease Monkeys." % outpost_display,
+		"objective": {
+			"type": "PICKUP_SPECIAL",
+			"target_outpost": outpost_id,
+			"target_outpost_display": outpost_display,
+			"target_npc": npc_name,
+			"part_name": part_name,
+			"destination": "Grease Monkeys",
+			"reward_credits": TEST_PICKUP_REWARD,
+		},
+	}
+	# Minimal selected_choice — no immediate credits / rep changes / multipliers.
+	var selected_choice: Dictionary = {
+		"text": "I'll take it.",
+		"consequence": {},
+	}
+	QuestManager.accept_quest(quest_data, selected_choice)
+	show_hud_warning("Quest active. Fly to %s, dock, and click 'Test: Pickup Part'." % outpost_display)
+	print("[TEST] Pickup quest accepted: '%s' from %s @ %s" % [part_name, npc_name, outpost_display])
 
 func _on_test_deliver_pressed() -> void:
-	if GlobalState.cargo_type != GlobalState.CargoType.SPECIAL:
+	if not QuestManager.is_quest_active():
+		show_hud_warning("No active quest to deliver.")
 		return
-	var part_name: String = GlobalState.cargo_special.get("name", "(unknown)")
-	GlobalState.clear_cargo()
-	GlobalState.player_credits += TEST_PICKUP_REWARD
-	print("[TEST] Delivered '%s' to Grease Monkeys. +%d SC." % [part_name, TEST_PICKUP_REWARD])
+	if not QuestManager.is_quest_completed():
+		show_hud_warning("You haven't picked up the part yet. Dock at the assigned outpost and click 'Test: Pickup Part'.")
+		return
+	# Snapshot the part name for the success message before complete_quest clears cargo
+	var part_name: String = QuestManager.active_quest.get("part_name", "(unknown)")
+	QuestManager.complete_quest()
+	show_hud_warning("Delivered '%s' to Grease Monkeys. +%d SC." % [part_name, TEST_PICKUP_REWARD])
 
 
 func undock_player():
