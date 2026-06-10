@@ -27,3 +27,6 @@ Thumbs.db
 *.obj.import
 *.fbx.import
 *.dae.import
+
+# Local bug investigation screenshots (not for the repo)
+docs/bug_screenshots/

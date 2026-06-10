@@ -1864,4 +1864,3 @@ func request_partial_delivery_line(quest_title: String, delivered_amount: float,
 	if err != OK:
 		temp_http.queue_free()
 		callback.call(fallback_partial_delivery_lines[randi() % fallback_partial_delivery_lines.size()])
-
