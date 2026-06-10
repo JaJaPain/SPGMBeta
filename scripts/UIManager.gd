@@ -31,6 +31,7 @@ var maintenance_bay_btn: Button
 var back_to_services_btn: Button
 var test_pickup_btn: Button
 var test_deliver_btn: Button
+var test_pickup_part_btn: Button
 
 # Dock submenu state. Every dockable station (main station, outposts)
 # shows the same two submenus:
@@ -656,6 +657,14 @@ func _create_dock_menu():
 	test_deliver_btn.text = "Test: Deliver Part"
 	test_deliver_btn.pressed.connect(_on_test_deliver_pressed)
 	vbox.add_child(test_deliver_btn)
+
+	# Outpost-only: completes the pickup half of the test quest. Shown only
+	# at outpost docks (see _render_dock_submenu). Disabled-by-default
+	# visibility stays off until the player docks at an outpost.
+	test_pickup_part_btn = Button.new()
+	test_pickup_part_btn.text = "Test: Pickup Part"
+	test_pickup_part_btn.pressed.connect(_on_test_pickup_part_pressed)
+	vbox.add_child(test_pickup_part_btn)
 
 	agent_service_btn = Button.new()
 	agent_service_btn.text = "Talk to Agent"
@@ -1505,6 +1514,13 @@ const TEST_OUTPOST_DISPLAY = {
 	"iron_reach": "Outpost Iron Reach",
 	"kova":      "Outpost Kova",
 }
+# Outpost scene node name → outpost id. The scene nodes are named after their
+# in-world labels (IronReachOutpost, KovaStation), not the lowercase ids the
+# quest data uses. This map bridges the two for the outpost-only buttons.
+const OUTPOST_NODE_TO_ID = {
+	"IronReachOutpost": "iron_reach",
+	"KovaStation":      "kova",
+}
 const TEST_PART_NAMES = [
 	"Plasma Coupler Mk II",
 	"Hydraulic Sealant Cartridge",
@@ -1575,6 +1591,39 @@ func _on_test_deliver_pressed() -> void:
 	var part_name: String = QuestManager.active_quest.get("part_name", "(unknown)")
 	QuestManager.complete_quest()
 	show_hud_warning("Delivered '%s' to Grease Monkeys. +%d SC." % [part_name, TEST_PICKUP_REWARD])
+
+
+# Outpost-side pickup button. Validates the active quest, the current
+# station, and the target outpost before calling QuestManager.mark_pickup_complete.
+func _on_test_pickup_part_pressed() -> void:
+	if not QuestManager.is_quest_active() \
+			or QuestManager.active_quest.get("objective_type", "") != "PICKUP_SPECIAL" \
+			or QuestManager.active_quest.get("picked_up", false):
+		show_hud_warning("No active pickup quest here. Start one at Grease Monkeys first.")
+		return
+
+	# Map the docked outpost's node name to its id, then compare against the
+	# quest's target outpost. Refuses the pickup if the player is at the wrong station.
+	if not current_station or not is_instance_valid(current_station):
+		show_hud_warning("No station docked.")
+		return
+	var docked_outpost_id: String = OUTPOST_NODE_TO_ID.get(current_station.name, "")
+	if docked_outpost_id == "":
+		show_hud_warning("Pickup can only happen at an outpost dock.")
+		return
+	var quest_outpost_id: String = QuestManager.active_quest.get("target_outpost", "")
+	if docked_outpost_id != quest_outpost_id:
+		show_hud_warning("Wrong outpost. The quest wants the part picked up at %s." % \
+			QuestManager.active_quest.get("target_outpost_display", quest_outpost_id))
+		return
+
+	var picked_part: String = QuestManager.active_quest.get("part_name", "the part")
+	var picked_npc: String = QuestManager.active_quest.get("target_npc", "the contact")
+	var success: bool = QuestManager.mark_pickup_complete()
+	if success:
+		show_hud_warning("Picked up '%s' from %s. Deliver to Grease Monkeys." % [picked_part, picked_npc])
+	else:
+		push_warning("[TEST] mark_pickup_complete returned false at outpost dock")
 
 
 func undock_player():
