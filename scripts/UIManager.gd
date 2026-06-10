@@ -32,6 +32,7 @@ var back_to_services_btn: Button
 var test_pickup_btn: Button
 var test_deliver_btn: Button
 var test_pickup_part_btn: Button
+var hear_gossip_btn: Button
 
 # Dock submenu state. Every dockable station (main station, outposts)
 # shows the same two submenus:
@@ -665,6 +666,13 @@ func _create_dock_menu():
 	test_pickup_part_btn.text = "Test: Pickup Part"
 	test_pickup_part_btn.pressed.connect(_on_test_pickup_part_pressed)
 	vbox.add_child(test_pickup_part_btn)
+
+	# Outpost-only: surface a random minor-NPC flavor line. Shown only at
+	# outpost docks (see _render_dock_submenu).
+	hear_gossip_btn = Button.new()
+	hear_gossip_btn.text = "Hear Gossip from the Locals"
+	hear_gossip_btn.pressed.connect(_on_hear_gossip_pressed)
+	vbox.add_child(hear_gossip_btn)
 
 	agent_service_btn = Button.new()
 	agent_service_btn.text = "Talk to Agent"
@@ -1473,6 +1481,7 @@ func _render_dock_submenu() -> void:
 		test_pickup_btn.visible = true
 		test_deliver_btn.visible = true
 		test_pickup_part_btn.visible = false
+		hear_gossip_btn.visible = false
 		back_to_services_btn.visible = true
 		if dock_background:
 			if dock_background.texture == null:
@@ -1492,6 +1501,7 @@ func _render_dock_submenu() -> void:
 		test_pickup_btn.visible = false
 		test_deliver_btn.visible = false
 		test_pickup_part_btn.visible = is_outpost
+		hear_gossip_btn.visible = is_outpost
 		back_to_services_btn.visible = false
 		if dock_background:
 			dock_background.visible = false
@@ -1514,11 +1524,12 @@ func _on_back_to_services_pressed() -> void:
 
 
 # ── Test quest: outpost pickup (DEBUG) ──────────────────────────────────────
-# Rerunnable debug feature. Each click of "Test: Start Outpost Pickup"
-# picks a random outpost + random NPC at that outpost + random part name,
-# clears any existing cargo, and loads the part as a special cargo item
-# via GlobalState.accept_special. Use "Test: Deliver" to complete the
-# cycle and clear the hold.
+# Rerunnable debug feature. The Start button at Grease Monkeys builds a
+# PICKUP_SPECIAL quest and hands it to QuestManager.accept_quest. The
+# player then flies to the assigned outpost, docks, and clicks
+# "Test: Pickup Part" (handler in the dock UI) to mark the part picked up
+# and load it into cargo. Return to Grease Monkeys and click
+# "Test: Deliver Part" to clear cargo and complete the quest.
 
 const TEST_OUTPOST_IDS = ["iron_reach", "kova"]
 const TEST_OUTPOST_DISPLAY = {
@@ -1635,6 +1646,32 @@ func _on_test_pickup_part_pressed() -> void:
 		show_hud_warning("Picked up '%s' from %s. Deliver to Grease Monkeys." % [picked_part, picked_npc])
 	else:
 		push_warning("[TEST] mark_pickup_complete returned false at outpost dock")
+
+
+# Outpost flavor button. Consumes GlobalState.get_random_npc_flavor_line for
+# the currently-docked outpost, flashes the line as a HUD warning, and
+# appends it to the corner chatter feed (persistent) so the player can
+# re-read it. Re-rolling picks a different NPC/line.
+func _on_hear_gossip_pressed() -> void:
+	if not current_station or not is_instance_valid(current_station):
+		show_hud_warning("No station docked.")
+		return
+	var outpost_id: String = OUTPOST_NODE_TO_ID.get(current_station.name, "")
+	if outpost_id == "":
+		show_hud_warning("No one to chat with at this dock.")
+		return
+
+	var flavor: Dictionary = GlobalState.get_random_npc_flavor_line(outpost_id)
+	if flavor.is_empty():
+		show_hud_warning("It's quiet. Nobody's around to talk to.")
+		return
+
+	var npc_name: String = flavor.get("npc_name", "Local")
+	var line: String = flavor.get("line", "")
+	var color: Color = flavor.get("color", Color.WHITE)
+	# Flash for instant feedback; emit_chatter for the persistent corner log.
+	show_hud_warning(line)
+	GlobalState.emit_chatter(npc_name, line, color)
 
 
 func undock_player():
