@@ -1453,6 +1453,13 @@ func toggle_dock_menu(station: Node3D):
 # player clicks between Services and Maintenance. The Grease Monkeys
 # hangar image shows only while the maintenance submenu is active.
 func _render_dock_submenu() -> void:
+	# Outposts are remote stations with no sell/agent/maintenance. Only the
+	# dock actions that make sense there (test pickup, hear gossip) plus
+	# undock should appear in the services submenu.
+	var is_outpost: bool = current_station != null \
+		and is_instance_valid(current_station) \
+		and current_station.get("station_type") == "outpost"
+
 	if current_submenu == DockSubmenu.MAINTENANCE:
 		dock_label.text = "GREASE MONKEYS — MAINTENANCE BAY"
 		# Maintenance submenu: hide services + entry button, show repair +
@@ -1465,22 +1472,26 @@ func _render_dock_submenu() -> void:
 		repair_btn.visible = true
 		test_pickup_btn.visible = true
 		test_deliver_btn.visible = true
+		test_pickup_part_btn.visible = false
 		back_to_services_btn.visible = true
 		if dock_background:
 			if dock_background.texture == null:
 				dock_background.texture = load("res://assets/RepairShop.png")
 			dock_background.visible = true
 	else:
-		# Services submenu (default): sell ore, talk to agent, entry button.
-		# Maintenance actions and back button are hidden. Background hidden.
-		sell_btn.visible = true
-		agent_service_btn.visible = true
-		maintenance_bay_btn.visible = true
+		# Services submenu (default): at a full-service station, show
+		# sell/agent/maintenance entry. At an outpost, show only the
+		# outpost-specific actions (test pickup, hear gossip when added)
+		# and hide the rest.
+		sell_btn.visible = not is_outpost
+		agent_service_btn.visible = not is_outpost
+		maintenance_bay_btn.visible = not is_outpost
 		upgrade_cargo_btn.visible = false
 		upgrade_laser_btn.visible = false
 		repair_btn.visible = false
 		test_pickup_btn.visible = false
 		test_deliver_btn.visible = false
+		test_pickup_part_btn.visible = is_outpost
 		back_to_services_btn.visible = false
 		if dock_background:
 			dock_background.visible = false
