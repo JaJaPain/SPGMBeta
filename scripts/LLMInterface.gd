@@ -1566,7 +1566,7 @@ func _notification(what: int) -> void:
 # Build the prompt for the unique Kaelen handoff LLM call.
 # `correction_suffix` is non-empty only on the self-critique retry — it tells
 # the model what it did wrong on the previous attempt so it can course-correct.
-func _build_kaelen_intro_prompt(agent_name: String, faction: String, title: String, examples_block: String, history_clause: String, correction_suffix: String) -> String:
+func _build_kaelen_intro_prompt(agent_name: String, faction: String, title: String, examples_block: String, history_clause: String, reputation_clause: String, correction_suffix: String) -> String:
 	return "You are Broker Kaelen. You are the speaker. " + agent_name + " is the OTHER person — the client you are about to bring in. The pilot is 'Shiny'.\n\n" + \
 		"SPEAKER RULE (most important — read carefully):\n" + \
 		"  - YOU are Kaelen. First person. You are talking TO the pilot ('Shiny') about " + agent_name + ".\n" + \
@@ -1582,8 +1582,9 @@ func _build_kaelen_intro_prompt(agent_name: String, faction: String, title: Stri
 		"  - Under 25 words. One sentence. No line breaks.\n" + \
 		"  - Tone: dry, transactional, faintly condescending, but professional. No poetry, no metaphors, no invented nouns.\n" + \
 		"  - Do NOT copy any example verbatim. Write a genuinely new line.\n" + \
-		"  - Do NOT invent factions, places, ships, jobs, or details not present in the pilot's history or the examples.\n" + \
+		"  - Do NOT invent factions, places, ships, jobs, or details not present in the pilot's history, the examples, or the reputation data.\n" + \
 		history_clause + "\n" + \
+		reputation_clause + "\n" + \
 		correction_suffix + "\n" + \
 		"You MUST respond strictly in valid JSON format. Only output the raw JSON object:\n" + \
 		"{\n" + \
@@ -1625,7 +1626,7 @@ func _check_kaelen_intro_speaker(line: String, agent_name: String) -> String:
 # with the given quest giver, so the intro can naturally call back to it.
 # If history is empty, Kaelen plays a neutral first-time-intro.
 # Returns a single short line (<= 25 words) to the callback.
-func request_kaelen_intro(quest_data: Dictionary, agent_history_text: String, callback: Callable):
+func request_kaelen_intro(quest_data: Dictionary, agent_history_text: String, player_reps: Dictionary, callback: Callable):
 	var title = quest_data.get("title", "the contract")
 	var faction = quest_data.get("faction", "neutral").capitalize()
 	var agent_name = quest_data.get("agent_name", "Broker Kaelen")
@@ -1645,18 +1646,34 @@ func request_kaelen_intro(quest_data: Dictionary, agent_history_text: String, ca
 		history_clause = "Here is the pilot's prior history with " + agent_name + ":\n" + agent_history_text + \
 			"\nYou may reference ONE item from this history in a short clause (reliability, payment disputes, a specific past job). Do NOT recap the whole list. Do NOT invent history not listed above."
 
+	# Build the reputation clause — gives Kaelen awareness of the pilot's
+	# political situation so she can color her tone about the upcoming agent
+	# AND give broader relationship advice (e.g. "you've made a lot of enemies,
+	# could use a few more friends with Vanguard"). Each faction shows a
+	# numeric rep plus a semantic tier label — 1.5b models pattern-match on
+	# the labels far better than on the raw numbers alone.
+	# 9 tiers: sworn enemy / hostile / unfriendly / wary | neutral | cordial / friendly / trusted / allied.
+	var reputation_clause = "Pilot's current faction standing (number + tier label):\n" + \
+		"- Zenith: " + str(int(player_reps.get("zenith", 0))) + " (" + GlobalState.reputation_tier(player_reps.get("zenith", 0)) + ")\n" + \
+		"- Aurelia: " + str(int(player_reps.get("aurelia", 0))) + " (" + GlobalState.reputation_tier(player_reps.get("aurelia", 0)) + ")\n" + \
+		"- Vanguard: " + str(int(player_reps.get("vanguard", 0))) + " (" + GlobalState.reputation_tier(player_reps.get("vanguard", 0)) + ")\n\n" + \
+		"Kaelen may use this to:\n" + \
+		"  - Color her tone about the upcoming agent — the tier label is the anchor. Negative tiers (wary → sworn enemy) get a colder, sharper register; positive tiers (cordial → allied) get a warmer, more respectful register. Match the register to the tier, do not invent a tone the label doesn't justify.\n" + \
+		"  - Comment on the pilot's broader social position — e.g. note that the pilot has made a lot of enemies and could use a few more friends with a particular faction, warn about a hostile faction, or contrast the pilot's friendly vs hostile relationships.\n\n" + \
+		"Kaelen is a broker — she has opinions on the pilot's political situation. Do NOT invent tiers or numbers not listed above."
+
 	# First attempt. If the response fails the speaker-leakage guard, we
 	# retry ONCE with a correction suffix that tells the model what it did
 	# wrong. After that, we hard-fall-back to canned (caller picks from
 	# fallback_handoff_lines_by_agent).
-	_kaelen_intro_request_attempt(agent_name, title, faction, examples_block, history_clause, "", 0, callback)
+	_kaelen_intro_request_attempt(agent_name, title, faction, examples_block, history_clause, reputation_clause, "", 0, callback)
 
 
 # Internal: make one LLM call for the handoff intro. `attempt` is 0 on the
 # first try, 1 on the self-critique retry. Total cap is 2 attempts — beyond
 # that the caller falls back to a canned line.
-func _kaelen_intro_request_attempt(agent_name: String, title: String, faction: String, examples_block: String, history_clause: String, correction_suffix: String, attempt: int, original_callback: Callable):
-	var prompt = _build_kaelen_intro_prompt(agent_name, faction, title, examples_block, history_clause, correction_suffix)
+func _kaelen_intro_request_attempt(agent_name: String, title: String, faction: String, examples_block: String, history_clause: String, reputation_clause: String, correction_suffix: String, attempt: int, original_callback: Callable):
+	var prompt = _build_kaelen_intro_prompt(agent_name, faction, title, examples_block, history_clause, reputation_clause, correction_suffix)
 
 	var temp_http = HTTPRequest.new()
 	add_child(temp_http)
@@ -1740,7 +1757,7 @@ func _kaelen_intro_request_attempt(agent_name: String, title: String, faction: S
 			# Build a correction suffix from the rejection reason and retry.
 			var new_suffix = "SELF-CRITIQUE — your previous attempt was rejected. Reason: " + rejection_reason
 			print("[LLMInterface] Kaelen intro: retrying with self-critique correction...")
-			_kaelen_intro_request_attempt(agent_name, title, faction, examples_block, history_clause, new_suffix, attempt + 1, original_callback)
+			_kaelen_intro_request_attempt(agent_name, title, faction, examples_block, history_clause, reputation_clause, new_suffix, attempt + 1, original_callback)
 			return
 
 		_kaelen_intro_successes += 1

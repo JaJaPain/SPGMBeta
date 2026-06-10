@@ -81,6 +81,65 @@ static func is_in_safe_zone(world_pos: Vector3) -> bool:
 			return true
 	return false
 
+# Convert a numeric reputation value to a semantic tier label.
+# 1.5b models understand semantic labels far better than raw numbers
+# in the same token budget — they skip the "what does -50 mean" step.
+# 9 tiers, symmetric around 0, with boundaries at 0 / ±25 / ±50 / ±75:
+#   -100..-75   sworn enemy
+#    -74..-50   hostile
+#    -49..-25   unfriendly
+#    -24..-1    wary
+#         0     neutral
+#      1..24    cordial
+#     25..49    friendly
+#     50..74    trusted
+#     75..100   allied
+static func reputation_tier(rep: float) -> String:
+	if rep <= -75.0: return "sworn enemy"
+	elif rep <= -50.0: return "hostile"
+	elif rep <= -25.0: return "unfriendly"
+	elif rep < 0.0: return "wary"
+	elif rep == 0.0: return "neutral"
+	elif rep <= 25.0: return "cordial"
+	elif rep <= 50.0: return "friendly"
+	elif rep <= 75.0: return "trusted"
+	else: return "allied"
+
+# Returns a UI color for the given reputation value, mapped to a
+# red → amber → neutral → green gradient. Pairs with reputation_tier()
+# so the tier label and the color always agree (same boundary values).
+# Tier colors:
+#   sworn enemy: deep red       Color(0.80, 0.10, 0.10)
+#   hostile:     red            Color(1.00, 0.20, 0.20)
+#   unfriendly:  orange-red     Color(1.00, 0.50, 0.20)
+#   wary:        amber          Color(1.00, 0.80, 0.30)
+#   neutral:     light gray     Color(0.80, 0.80, 0.80)
+#   cordial:     yellow-green   Color(0.70, 1.00, 0.40)
+#   friendly:    light green    Color(0.40, 0.90, 0.30)
+#   trusted:     green          Color(0.20, 0.80, 0.20)
+#   allied:      bright green   Color(0.10, 1.00, 0.40)
+static func reputation_color(rep: float) -> Color:
+	if rep <= -75.0: return Color(0.80, 0.10, 0.10)
+	elif rep <= -50.0: return Color(1.00, 0.20, 0.20)
+	elif rep <= -25.0: return Color(1.00, 0.50, 0.20)
+	elif rep < 0.0: return Color(1.00, 0.80, 0.30)
+	elif rep == 0.0: return Color(0.80, 0.80, 0.80)
+	elif rep <= 25.0: return Color(0.70, 1.00, 0.40)
+	elif rep <= 50.0: return Color(0.40, 0.90, 0.30)
+	elif rep <= 75.0: return Color(0.20, 0.80, 0.20)
+	else: return Color(0.10, 1.00, 0.40)
+
+# Returns the display info for a major faction.
+# Used to build the HUD rep tooltips ("Zenith (Corporate) — trusted (50)").
+# Returns a dict with: name (full display name), descriptor (e.g. "Corporate"),
+# abbrev (3-letter HUD abbreviation).
+static func faction_info(faction_id: String) -> Dictionary:
+	match faction_id.to_lower():
+		"zenith":   return {"name": "Zenith",   "descriptor": "Corporate", "abbrev": "ZEN"}
+		"aurelia":  return {"name": "Aurelia",  "descriptor": "Syndicate", "abbrev": "AUR"}
+		"vanguard": return {"name": "Vanguard", "descriptor": "Military",  "abbrev": "VAN"}
+		_:          return {"name": faction_id.capitalize(), "descriptor": "Unknown", "abbrev": faction_id.substr(0, 3).to_upper()}
+
 signal target_changed(new_target: Node3D)
 signal cargo_changed(new_cargo: float)
 signal credits_changed(new_credits: int)

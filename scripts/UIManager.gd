@@ -250,10 +250,38 @@ func _create_hud():
 	hp_bar.add_theme_stylebox_override("fill", sb)
 	vbox.add_child(hp_bar)
 	
-	var rep_lbl = Label.new()
-	rep_lbl.name = "RepLabel"
-	rep_lbl.text = "Rep: ZEN 50 | AUR -20 | VAN -20"
-	vbox.add_child(rep_lbl)
+	# Reputation row — 3 separate labels (one per faction) so each can carry
+	# its own color and tooltip. Separators are plain labels (mouse_filter
+	# ignored) so they don't intercept hover events on the faction labels.
+	var rep_hbox = HBoxContainer.new()
+	vbox.add_child(rep_hbox)
+
+	var rep_prefix = Label.new()
+	rep_prefix.text = "Rep: "
+	rep_hbox.add_child(rep_prefix)
+
+	var zen_lbl = Label.new()
+	zen_lbl.name = "ZenRepLabel"
+	zen_lbl.mouse_filter = Control.MOUSE_FILTER_STOP  # enable tooltip
+	rep_hbox.add_child(zen_lbl)
+
+	var sep1 = Label.new()
+	sep1.text = " | "
+	rep_hbox.add_child(sep1)
+
+	var aur_lbl = Label.new()
+	aur_lbl.name = "AurRepLabel"
+	aur_lbl.mouse_filter = Control.MOUSE_FILTER_STOP
+	rep_hbox.add_child(aur_lbl)
+
+	var sep2 = Label.new()
+	sep2.text = " | "
+	rep_hbox.add_child(sep2)
+
+	var van_lbl = Label.new()
+	van_lbl.name = "VanRepLabel"
+	van_lbl.mouse_filter = Control.MOUSE_FILTER_STOP
+	rep_hbox.add_child(van_lbl)
 	
 	# Quest Tracker HUD Panel (positioned at Vector2(20, 220) with horizontal layout)
 	quest_tracker_panel = Panel.new()
@@ -1709,12 +1737,27 @@ func _update_hud_health():
 
 func _update_hud_reputations():
 	if not hud_panel: return
-	var rep_label = hud_panel.find_child("RepLabel", true, false) as Label
-	if rep_label:
-		var zen = int(GlobalState.reputations.get("zenith", 0.0))
-		var aur = int(GlobalState.reputations.get("aurelia", 0.0))
-		var van = int(GlobalState.reputations.get("vanguard", 0.0))
-		rep_label.text = "Rep: ZEN %d | AUR %d | VAN %d" % [zen, aur, van]
+	_update_faction_rep_label("ZenRepLabel", "zenith")
+	_update_faction_rep_label("AurRepLabel", "aurelia")
+	_update_faction_rep_label("VanRepLabel", "vanguard")
+
+# Updates one faction's HUD rep label: text (abbrev + value), color (tier
+# gradient), and tooltip (full name + descriptor + current tier + value).
+func _update_faction_rep_label(label_name: String, faction_id: String):
+	var lbl = hud_panel.find_child(label_name, true, false) as Label
+	if not lbl: return
+
+	var rep_value = int(GlobalState.reputations.get(faction_id, 0.0))
+	var info = GlobalState.faction_info(faction_id)
+	var tier = GlobalState.reputation_tier(rep_value)
+	var color = GlobalState.reputation_color(rep_value)
+
+	# Display: "ZEN 50"
+	lbl.text = "%s %d" % [info.abbrev, rep_value]
+	# Color: tier gradient (red → gray → green)
+	lbl.add_theme_color_override("font_color", color)
+	# Tooltip: full name + descriptor + current feeling + numeric value
+	lbl.tooltip_text = "%s (%s) — %s (%d)" % [info.name, info.descriptor, tier, rep_value]
 
 func refresh_overview():
 	var entities: Array = []
@@ -1952,7 +1995,7 @@ func _on_background_quest_generated(quest_data: Dictionary, is_fallback: bool):
 			var agent_name = quest_data.get("agent_name", "Broker Kaelen")
 			var faction = quest_data.get("faction", "neutral")
 			var agent_history = QuestManager.filter_history_for_agent(agent_name, faction)
-			LLMInterface.request_kaelen_intro(quest_data, agent_history, func(unique_line: String):
+			LLMInterface.request_kaelen_intro(quest_data, agent_history, GlobalState.reputations, func(unique_line: String):
 				if unique_line.strip_edges() == "":
 					print("[TRACE] [UIManager] No unique intro available — will fall back to canned handoff.")
 					cached_unique_intro = ""
