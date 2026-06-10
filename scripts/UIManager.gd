@@ -1669,8 +1669,11 @@ func _on_hear_gossip_pressed() -> void:
 	var npc_name: String = flavor.get("npc_name", "Local")
 	var line: String = flavor.get("line", "")
 	var color: Color = flavor.get("color", Color.WHITE)
-	# Flash for instant feedback; emit_chatter for the persistent corner log.
-	show_hud_warning(line)
+	# Soft flash in the NPC's own color so it reads as dialogue, not as an
+	# error. show_hud_warning is reserved for actual error states (wrong
+	# outpost, no quest, etc.) and stays red. emit_chatter appends the same
+	# line to the persistent corner log.
+	show_hud_info(line, color)
 	GlobalState.emit_chatter(npc_name, line, color)
 
 
@@ -2023,6 +2026,35 @@ func show_hud_warning(text: String):
 	tween.tween_interval(2.5)
 	tween.tween_property(warning_label, "modulate:a", 0.0, 1.5)
 	tween.tween_callback(warning_label.queue_free)
+
+# Soft counterpart to show_hud_warning. Same shape and position, but the
+# label is tinted with the caller's color (default cyan) instead of red,
+# so it reads as neutral information / flavor dialogue rather than an
+# error state. Use for quest progress, gossip lines, lore drops, etc.
+# Reserve show_hud_warning for actual failures the player needs to react to.
+func show_hud_info(text: String, tint: Color = Color(0.0, 0.85, 1.0)):
+	var info_label = Label.new()
+	info_label.text = text
+	info_label.modulate = tint
+	info_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	info_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	
+	info_label.add_theme_font_size_override("font_size", 22)
+	info_label.add_theme_color_override("font_shadow_color", Color.BLACK)
+	info_label.add_theme_constant_override("shadow_outline_size", 4)
+	
+	info_label.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	info_label.offset_left = -300
+	info_label.offset_right = 300
+	info_label.offset_top = 100
+	info_label.offset_bottom = 150
+	
+	add_child(info_label)
+	
+	var tween = create_tween()
+	tween.tween_interval(2.5)
+	tween.tween_property(info_label, "modulate:a", 0.0, 1.5)
+	tween.tween_callback(info_label.queue_free)
 
 func _update_repair_button():
 	if not repair_btn: return
