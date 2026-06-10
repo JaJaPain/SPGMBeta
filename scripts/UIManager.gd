@@ -62,7 +62,7 @@ var agent_dialogue_label: Label
 var agent_choices_container: VBoxContainer
 var agent_back_btn: Button
 
-var quest_tracker_panel: Panel
+var quest_tracker_panel: PanelContainer
 var quest_tracker_title: Label
 var quest_tracker_progress: Label
 var quest_tracker_logo: TextureRect
@@ -306,12 +306,16 @@ func _create_hud():
 	van_lbl.mouse_filter = Control.MOUSE_FILTER_STOP
 	rep_hbox.add_child(van_lbl)
 	
-	# Quest Tracker HUD Panel (positioned at Vector2(20, 220) with horizontal layout)
-	quest_tracker_panel = Panel.new()
-	quest_tracker_panel.custom_minimum_size = Vector2(360, 80)
+	# Quest Tracker HUD Panel. A PanelContainer (not Panel) so it
+	# auto-sizes to its content — when the progress label wraps to
+	# 2-3 lines, the panel grows vertically to fit. Width is pinned
+	# at 380px min via custom_minimum_size so the labels wrap
+	# consistently; height follows content.
+	quest_tracker_panel = PanelContainer.new()
+	quest_tracker_panel.custom_minimum_size = Vector2(380, 0)
 	quest_tracker_panel.position = Vector2(20, 220)
 	add_child(quest_tracker_panel)
-	
+
 	var tracker_style = StyleBoxFlat.new()
 	tracker_style.bg_color = Color(0.1, 0.1, 0.12, 0.6)
 	tracker_style.border_width_left = 1
@@ -323,13 +327,23 @@ func _create_hud():
 	tracker_style.corner_radius_top_right = 4
 	tracker_style.corner_radius_bottom_right = 4
 	tracker_style.corner_radius_bottom_left = 4
+	tracker_style.content_margin_left = 8
+	tracker_style.content_margin_right = 8
+	tracker_style.content_margin_top = 8
+	tracker_style.content_margin_bottom = 8
 	quest_tracker_panel.add_theme_stylebox_override("panel", tracker_style)
-	
+
+	# HBoxContainer: a Container. By default a single-child Container
+	# would just take its child's size. We want a horizontal layout
+	# with logo on the left and text on the right, so the hbox
+	# itself sizes to the union of its children: logo's 48px width
+	# + vbox's expanded width. The vbox will expand to fill the
+	# remaining horizontal space (after the logo), and will be as
+	# tall as the wrapped text needs.
 	var tracker_hbox = HBoxContainer.new()
-	tracker_hbox.position = Vector2(8, 8)
-	tracker_hbox.custom_minimum_size = Vector2(344, 64)
+	tracker_hbox.add_theme_constant_override("separation", 8)
 	quest_tracker_panel.add_child(tracker_hbox)
-	
+
 	# Faction branding logo on the left of tracker
 	quest_tracker_logo = TextureRect.new()
 	quest_tracker_logo.custom_minimum_size = Vector2(48, 48)
@@ -337,28 +351,42 @@ func _create_hud():
 	quest_tracker_logo.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	quest_tracker_logo.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	tracker_hbox.add_child(quest_tracker_logo)
-	
+
+	# VBox: takes the remaining horizontal space (after the logo)
+	# and stacks the header, title, and progress label. The
+	# progress label is the one that grows vertically when a long
+	# pickup line wraps.
 	var tracker_vbox = VBoxContainer.new()
 	tracker_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	tracker_vbox.alignment = BoxContainer.ALIGNMENT_CENTER
 	tracker_hbox.add_child(tracker_vbox)
-	
+
 	var tracker_header = Label.new()
 	tracker_header.text = "ACTIVE CONTRACT"
 	tracker_header.add_theme_font_size_override("font_size", 10)
 	tracker_header.add_theme_color_override("font_color", Color(0.0, 0.9, 0.9))
 	tracker_vbox.add_child(tracker_header)
-	
+
 	quest_tracker_title = Label.new()
 	quest_tracker_title.text = "Contract Title"
 	quest_tracker_title.add_theme_font_size_override("font_size", 13)
+	# Wrap long LLM-generated titles so the panel can grow vertically
+	# instead of letting text spill out the right edge.
+	quest_tracker_title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	quest_tracker_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	tracker_vbox.add_child(quest_tracker_title)
-	
+
 	quest_tracker_progress = Label.new()
 	quest_tracker_progress.text = "Progress: 0 / 0"
 	quest_tracker_progress.add_theme_font_size_override("font_size", 12)
+	# This is the line that overflowed in the user's screenshot
+	# ("Pickup: Firmware Module — Nav Compute v3.1 from Alaric Venn @
+	# Outpost Iron Reach"). With wrap + expand-fill, it breaks into
+	# 2-3 lines inside the panel and the panel grows to fit.
+	quest_tracker_progress.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	quest_tracker_progress.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	tracker_vbox.add_child(quest_tracker_progress)
-	
+
 	quest_tracker_panel.visible = false
 
 	# Systems Comms Chat Window (positioned at the bottom-left corner using anchors for responsiveness)
