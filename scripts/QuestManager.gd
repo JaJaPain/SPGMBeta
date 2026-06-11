@@ -236,7 +236,6 @@ func mark_pickup_complete() -> bool:
 		return false
 	if active_quest.get("picked_up", false):
 		return false
-	active_quest["picked_up"] = true
 	var part_name: String = active_quest.get("part_name", "Unknown Part")
 	var target_npc: String = active_quest.get("target_npc", "an unknown contact")
 	var target_outpost: String = active_quest.get("target_outpost_display", active_quest.get("target_outpost", "an outpost"))
@@ -244,7 +243,11 @@ func mark_pickup_complete() -> bool:
 	var description: String = "Picked up from %s at %s. Deliver to %s at %s." % [
 		target_npc, target_outpost, active_quest["agent_name"], destination
 	]
-	GlobalState.accept_special(part_name, description, target_outpost, destination)
+	if not GlobalState.accept_special(part_name, description, target_outpost, destination):
+		print("[QuestManager] PICKUP_SPECIAL failed to pick up: cargo hold not empty")
+		return false
+		
+	active_quest["picked_up"] = true
 	print("[QuestManager] PICKUP_SPECIAL picked up: '%s' from %s" % [part_name, target_npc])
 	quest_progress_updated.emit()
 	return true

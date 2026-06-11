@@ -299,6 +299,53 @@ var fallback_templates = [
 				}
 			}
 		]
+	},
+	{
+		"title": "Discreet Transport",
+		"faction": "vanguard",
+		"agent_name": "Broker Kaelen",
+		"dialogue": "Listen carefully, Shiny. Vanguard needs a secure retrieval. Head over to Outpost Iron Reach and find Alaric Venn. He has a Sealed Data Drive. Bring it straight back to me, unopened. The pay is good, but the risk is high.",
+		"objective": {
+			"type": "PICKUP_SPECIAL",
+			"target_outpost": "iron_reach",
+			"target_outpost_display": "Outpost Iron Reach",
+			"target_npc": "Alaric Venn",
+			"part_name": "Sealed Data Drive",
+			"destination": "Broker Kaelen",
+			"reward_credits": 250
+		},
+		"choices": [
+			{
+				"text": "I'll fetch it. Simple enough.",
+				"consequence": {
+					"credits_immediate": 0,
+					"reputation_change": {"vanguard": 3},
+					"combat_multiplier": 1.0,
+					"reward_credits_multiplier": 1.0,
+					"dialogue_response": "Good. Don't scratch it and don't open it."
+				}
+			},
+			{
+				"text": "Sounds shady. I want 50 credits up front.",
+				"consequence": {
+					"credits_immediate": 50,
+					"reputation_change": {"vanguard": -1},
+					"combat_multiplier": 1.3,
+					"reward_credits_multiplier": 1.2,
+					"dialogue_response": "You ask too many questions. Fine, take the advance, but keep your head on a swivel."
+				}
+			},
+			{
+				"text": "I want a bigger cut for the risk.",
+				"consequence": {
+					"credits_immediate": 0,
+					"reputation_change": {"vanguard": -3},
+					"combat_multiplier": 1.7,
+					"reward_credits_multiplier": 1.6,
+					"dialogue_response": "Greedy. Fine, Vanguard will pay. But don't expect them to be happy about it."
+				}
+			}
+		]
 	}
 ]
 
@@ -349,7 +396,8 @@ var active_fetches = {
 	"hostile_taunt": false,
 	"death_cry": false,
 	"system_alert": false,
-	"industrial_banter": false
+	"industrial_banter": false,
+	"pickup_keywords": false
 }
 
 # Fallback Kaelen lines if LLM is offline or too slow
@@ -654,11 +702,16 @@ func request_quest_generation(agent_faction: String, history_text: String, playe
 	
 	# Pre-decide objective type so example AND instruction always match.
 	# The LLM cannot choose — it must use the type we picked.
-	var chosen_type = "DELIVER_ORE" if randi() % 2 == 0 else "KILL_SHIPS"
+	var quest_types = ["DELIVER_ORE", "KILL_SHIPS", "PICKUP_SPECIAL"]
+	var chosen_type = quest_types[randi() % quest_types.size()]
 	
 	# Build the matching example block
 	var example_obj_block = ""
 	var example_title = ""
+	var pickup_outpost = ""
+	var pickup_outpost_display = ""
+	var pickup_npc = ""
+	var pickup_item = ""
 	
 	if chosen_type == "DELIVER_ORE":
 		example_title = "Silicate Run"
@@ -668,7 +721,7 @@ func request_quest_generation(agent_faction: String, history_text: String, playe
 			"    \"amount_required\": 25.0,\n" + \
 			"    \"reward_credits\": 160\n" + \
 			"  },"
-	else:
+	elif chosen_type == "KILL_SHIPS":
 		# KILL_SHIPS — pick a kill target (90% minor factions, 10% major factions)
 		var kill_target = ""
 		if randf() < 0.9:
@@ -688,6 +741,26 @@ func request_quest_generation(agent_faction: String, history_text: String, playe
 			"    \"count_required\": 3,\n" + \
 			"    \"reward_credits\": 200\n" + \
 			"  },"
+	elif chosen_type == "PICKUP_SPECIAL":
+		var outpost_ids = GlobalState.PICKUP_OUTPOST_IDS
+		pickup_outpost = outpost_ids[randi() % outpost_ids.size()]
+		pickup_outpost_display = GlobalState.PICKUP_OUTPOST_DISPLAY.get(pickup_outpost, pickup_outpost)
+		var npcs_at_outpost = GlobalState.get_minor_npcs_at_outpost(pickup_outpost)
+		pickup_npc = npcs_at_outpost[randi() % npcs_at_outpost.size()]
+		var fetch_items = ["Large Unmarked Crate", "Suspension Pod", "Sealed Data Drive", "Biometric Lockbox", "Hazardous Material Container"]
+		pickup_item = fetch_items[randi() % fetch_items.size()]
+		
+		example_title = "Discreet Courier"
+		example_obj_block = \
+			"  \"objective\": {\n" + \
+			"    \"type\": \"PICKUP_SPECIAL\",\n" + \
+			"    \"target_outpost\": \"" + pickup_outpost + "\",\n" + \
+			"    \"target_outpost_display\": \"" + pickup_outpost_display + "\",\n" + \
+			"    \"target_npc\": \"" + pickup_npc + "\",\n" + \
+			"    \"part_name\": \"" + pickup_item + "\",\n" + \
+			"    \"destination\": \"" + agent_name + "\",\n" + \
+			"    \"reward_credits\": 250\n" + \
+			"  },"
 
 	# Also align the agent example dialogue to the chosen type so the LLM
 	# sees a consistent story/objective pairing in the example block
@@ -701,6 +774,16 @@ func request_quest_generation(agent_faction: String, history_text: String, playe
 				example_dialogue = "Zenith is probing our flank again, Indy. Four contacts in the sector. Clear the zone before they can report back."
 			_:
 				example_dialogue = "Got a hostile problem that needs solving, " + player_nickname + ". A handful of ships that need removing. Standard removal contract."
+	elif chosen_type == "PICKUP_SPECIAL":
+		match chosen_faction:
+			"zenith":
+				example_dialogue = "Zenith logistics requires a discreet transport, " + player_nickname + ". Proceed to " + pickup_outpost_display + " and retrieve a " + pickup_item + " from " + pickup_npc + ". Do not ask questions about the cargo."
+			"aurelia":
+				example_dialogue = "I need a quiet runner, " + player_nickname + ". Head over to " + pickup_outpost_display + " and find " + pickup_npc + ". They have a " + pickup_item + " for me. Bring it straight back here, unopened."
+			"vanguard":
+				example_dialogue = "Vanguard command needs a secure retrieval, " + player_nickname + ". A contact named " + pickup_npc + " at " + pickup_outpost_display + " is holding a " + pickup_item + ". Secure it and return immediately."
+			_:
+				example_dialogue = "Got a lucrative fetch job, " + player_nickname + ". I need you to go to " + pickup_outpost_display + " and get a " + pickup_item + " from " + pickup_npc + ". Bring it to me intact and you'll get paid."
 
 
 
@@ -768,8 +851,8 @@ func request_quest_generation(agent_faction: String, history_text: String, playe
 		"Now generate a COMPLETELY DIFFERENT quest with a unique title and all-new dialogue written in your character's voice. " + \
 		"The faction must be \"" + chosen_faction + "\". The agent_name must be \"" + agent_name + "\". " + \
 		"The objective type in your JSON MUST be '" + chosen_type + "' — do NOT use any other objective type. " + \
-		("For KILL_SHIPS you MUST include 'target_faction' (must NOT equal '" + chosen_faction + "') and 'count_required' (integer 2–4). " if chosen_type == "KILL_SHIPS" else "For DELIVER_ORE you MUST include 'amount_required' (float 20–300). ") + \
-		"Your dialogue MUST state the exact objective number — for kills, mention how many ships; for ore, mention how many m³. " + \
+		("For KILL_SHIPS you MUST include 'target_faction' (must NOT equal '" + chosen_faction + "') and 'count_required' (integer 2–4). " if chosen_type == "KILL_SHIPS" else ("For PICKUP_SPECIAL you MUST include 'target_outpost' (must equal '" + pickup_outpost + "'), 'target_outpost_display' (must equal '" + pickup_outpost_display + "'), 'target_npc' (must equal '" + pickup_npc + "'), 'part_name' (must equal '" + pickup_item + "'), and 'destination' (must equal '" + agent_name + "'). " if chosen_type == "PICKUP_SPECIAL" else "For DELIVER_ORE you MUST include 'amount_required' (float 20–300). ")) + \
+		("Your dialogue MUST mention the target NPC (" + pickup_npc + "), the outpost (" + pickup_outpost_display + "), and the exact item name (" + pickup_item + "). " if chosen_type == "PICKUP_SPECIAL" else "Your dialogue MUST state the exact objective number — for kills, mention how many ships; for ore, mention how many m³. ") + \
 		"Always call the pilot '" + player_nickname + "' — never use any other nickname. " + \
 		"Output only the raw JSON object."
 	
@@ -861,12 +944,14 @@ func _validate_quest_data(quest_data: Dictionary):
 	# Check if the dialogue describes a different mission type than the JSON
 	var dialogue_sounds_like_kill = false
 	var dialogue_sounds_like_ore = false
+	var dialogue_sounds_like_pickup = false
 	
 	var kill_keywords = ["destroy", "eliminate", "kill", "take out", "take down",
 		"clear", "remove", "neutralize", "engage", "intercept", "wipe out",
 		"blow up", "shoot down", "hostile", "raider", "patrol", "contacts"]
 	var ore_keywords = ["ore", "silicate", "mine", "mining", "deliver", "cargo",
 		"shipment", "haul", "tonnage", "cubic", "m³", "m3"]
+	var pickup_keywords = ["retrieve", "fetch", "unopened", "crate", "pod", "lockbox", "container", "drive"]
 	
 	for kw in kill_keywords:
 		if dialogue.find(kw) != -1:
@@ -876,9 +961,13 @@ func _validate_quest_data(quest_data: Dictionary):
 		if dialogue.find(kw) != -1:
 			dialogue_sounds_like_ore = true
 			break
+	for kw in pickup_keywords:
+		if dialogue.find(kw) != -1:
+			dialogue_sounds_like_pickup = true
+			break
 	
 	# If dialogue clearly describes kills but JSON says ore (or vice versa), fix the type
-	if dialogue_sounds_like_kill and not dialogue_sounds_like_ore and obj_type == "DELIVER_ORE":
+	if dialogue_sounds_like_kill and not dialogue_sounds_like_ore and not dialogue_sounds_like_pickup and obj_type == "DELIVER_ORE":
 		print("[LLMInterface] ⚠ VALIDATE: Dialogue describes KILL mission but JSON says DELIVER_ORE. Patching type.")
 		obj["type"] = "KILL_SHIPS"
 		obj_type = "KILL_SHIPS"
@@ -890,7 +979,7 @@ func _validate_quest_data(quest_data: Dictionary):
 			var minor_keys = GlobalState.MINOR_FACTIONS.keys()
 			obj["target_faction"] = minor_keys[randi() % minor_keys.size()]
 		obj.erase("amount_required")
-	elif dialogue_sounds_like_ore and not dialogue_sounds_like_kill and obj_type == "KILL_SHIPS":
+	elif dialogue_sounds_like_ore and not dialogue_sounds_like_kill and not dialogue_sounds_like_pickup and obj_type == "KILL_SHIPS":
 		print("[LLMInterface] ⚠ VALIDATE: Dialogue describes ORE mission but JSON says KILL_SHIPS. Patching type.")
 		obj["type"] = "DELIVER_ORE"
 		obj_type = "DELIVER_ORE"
@@ -925,6 +1014,23 @@ func _validate_quest_data(quest_data: Dictionary):
 	elif obj_type == "DELIVER_ORE":
 		var amount = float(obj.get("amount_required", 25.0))
 		obj["amount_required"] = clampf(amount, 20.0, 300.0)
+	elif obj_type == "PICKUP_SPECIAL":
+		var outpost = obj.get("target_outpost", "")
+		var npc = obj.get("target_npc", "")
+		var valid_outposts = GlobalState.PICKUP_OUTPOST_IDS
+		if outpost not in valid_outposts:
+			obj["target_outpost"] = valid_outposts[0]
+			obj["target_outpost_display"] = GlobalState.PICKUP_OUTPOST_DISPLAY.get(valid_outposts[0], valid_outposts[0])
+			npc = GlobalState.get_minor_npcs_at_outpost(valid_outposts[0])[0]
+			obj["target_npc"] = npc
+		else:
+			var valid_npcs = GlobalState.get_minor_npcs_at_outpost(outpost)
+			if npc not in valid_npcs:
+				obj["target_npc"] = valid_npcs[0] if valid_npcs.size() > 0 else "Mariska Vonn"
+		if not obj.has("part_name"):
+			obj["part_name"] = "Suspicious Crate"
+		if not obj.has("destination"):
+			obj["destination"] = "Main Station"
 
 func _reconcile_kill_count(quest_data: Dictionary, dialogue: String, obj: Dictionary):
 	# Look for patterns like "3 ships", "kill 4", "destroy 2", "four contacts", etc.

@@ -92,7 +92,7 @@ var su_power_btn: Button
 var su_shields_btn: Button
 var su_mining_btn: Button
 var su_ship_sys_vbox: VBoxContainer
-var su_ship_sys_lbl: Label
+var su_ship_sys_lbl: RichTextLabel
 var su_ore_bank_lbl: Label
 var back_to_services_btn: Button
 var test_pickup_btn: Button
@@ -3460,6 +3460,13 @@ func _on_choice_selected(quest_data: Dictionary, choice: Dictionary):
 	# Accept quest
 	QuestManager.accept_quest(quest_data, choice)
 	
+	if quest_data.get("objective", {}).get("type", "") == "PICKUP_SPECIAL":
+		var npc_name = quest_data["objective"].get("target_npc", "unknown")
+		var part_name = quest_data["objective"].get("part_name", "the part")
+		var outpost_display = quest_data["objective"].get("target_outpost_display", "the outpost")
+		var client_name = quest_data.get("agent_name", "the client")
+		_request_outpost_pickup_handoff_attempt(npc_name, part_name, outpost_display, client_name, "", 0)
+	
 	var consequence = choice.get("consequence", {})
 	var raw_response = consequence.get("dialogue_response", "")
 	var clean_response = TTSInterface.clean_dialogue_text(raw_response)
@@ -3785,7 +3792,7 @@ func _on_mechanic_pickup_accept_pressed() -> void:
 		
 	# Kick off the LLM call to generate the outpost contact's handoff line.
 	# The line is cached on the quest dict via QuestManager.set_pickup_handoff.
-	_request_outpost_pickup_handoff_attempt(npc_name, part_name, outpost_display, "", 0)
+	_request_outpost_pickup_handoff_attempt(npc_name, part_name, outpost_display, "Jenna Kross", "", 0)
 
 func _on_mechanic_pickup_decline_pressed() -> void:
 	_mechanic_pickup_declined = true
@@ -3848,12 +3855,13 @@ func _complete_pickup_with_handoff() -> void:
 	var picked_npc: String = str(QuestManager.active_quest.get("target_npc", "the contact"))
 	
 	var line = QuestManager.active_quest.get("pickup_handoff_line", "")
+	var client_name: String = str(QuestManager.active_quest.get("agent_name", "Jenna Kross"))
 	
 	# Patch to override the old legacy fallback if it got cached before the update
 	var old_fallback: String = "Jenna sent you? Alright, here's the %s. Tell her we're even." % picked_part
 	if line == "" or line == old_fallback:
 		var salt: int = randi() % FALLBACK_OUTPOST_HANDOFF.size()
-		line = FALLBACK_OUTPOST_HANDOFF[salt].replace("{part}", picked_part)
+		line = FALLBACK_OUTPOST_HANDOFF[salt].replace("{part}", picked_part).replace("{client}", client_name)
 		
 	var npc_color: Color = Color(0.85, 0.85, 0.85)
 	var npc_portrait: Texture2D = null
@@ -3885,34 +3893,34 @@ func _complete_pickup_with_handoff() -> void:
 		push_warning("[UIManager] _complete_pickup_with_handoff: mark_pickup_complete returned false")
 
 const FALLBACK_OUTPOST_HANDOFF: Array = [
-	"Tell Jenna she owes me for this {part}, but not like last time. I still can't get that stain out of my carpet. She knows what I mean.",
-	"Here's the {part}. Remind Jenna that her tab here is longer than a freighter, and this isn't a charity.",
-	"Take the {part}. And tell Jenna if she sends another one of her 'favorite couriers' smelling like engine grease, I'm charging double.",
-	"Got the {part} right here. You let Jenna know she's lucky I don't hold a grudge about the plasma scorch on my docking bay.",
-	"Handing over the {part}. Make sure Jenna knows this favors market is getting awfully one-sided.",
+	"Tell {client} they owe me for this {part}, but not like last time. I still can't get that stain out of my carpet. They know what I mean.",
+	"Here's the {part}. Remind {client} that their tab here is longer than a freighter, and this isn't a charity.",
+	"Take the {part}. And tell {client} if they send another one of their 'favorite couriers' smelling like engine grease, I'm charging double.",
+	"Got the {part} right here. You let {client} know they're lucky I don't hold a grudge about the plasma scorch on my docking bay.",
+	"Handing over the {part}. Make sure {client} knows this favors market is getting awfully one-sided.",
 ]
 
 # ── Outpost Handoff LLM Logic ───────────────────────────────────────────────
 
-func _request_outpost_pickup_handoff_attempt(npc_name: String, part_name: String, outpost_display: String, critique_suffix: String, attempt: int) -> void:
+func _request_outpost_pickup_handoff_attempt(npc_name: String, part_name: String, outpost_display: String, client_name: String, critique_suffix: String, attempt: int) -> void:
 	if attempt >= 2:
-		_apply_pickup_handoff_fallback(npc_name, part_name)
+		_apply_pickup_handoff_fallback(npc_name, part_name, client_name)
 		return
 		
 	var examples_block: String = ""
 	for i in range(3):
-		var ex: String = FALLBACK_OUTPOST_HANDOFF[i].replace("{part}", part_name)
+		var ex: String = FALLBACK_OUTPOST_HANDOFF[i].replace("{part}", part_name).replace("{client}", client_name)
 		examples_block += "- \"" + ex + "\"\n"
 		
 	var base_prompt: String = (
 		"You are " + npc_name + ", working at " + outpost_display + ". "
-		+ "The player has arrived to pick up a part for Jenna Kross (a mechanic). "
+		+ "The player has arrived to pick up a part for " + client_name + ". "
 		+ "Write a short line (1-2 sentences) handing over the part.\n\n"
-		+ "Here are some examples of the snarky, colorful tone you should use when talking about Jenna:\n"
+		+ "Here are some examples of the snarky, colorful tone you should use when talking about " + client_name + ":\n"
 		+ examples_block + "\n"
 		+ "HARD REQUIREMENTS:\n"
 		+ "1. Mention the part name: \"" + part_name + "\"\n"
-		+ "2. Mention Jenna.\n"
+		+ "2. Mention " + client_name + ".\n"
 		+ "3. Output valid JSON: {\"line\": \"<your line>\"}"
 	)
 	var prompt_to_send: String = base_prompt
@@ -3935,7 +3943,7 @@ func _request_outpost_pickup_handoff_attempt(npc_name: String, part_name: String
 	http.request_completed.connect(func(result: int, code: int, _h: PackedStringArray, body_bytes: PackedByteArray) -> void:
 		http.queue_free()
 		if result != HTTPRequest.RESULT_SUCCESS or code != 200:
-			_apply_pickup_handoff_fallback(npc_name, part_name)
+			_apply_pickup_handoff_fallback(npc_name, part_name, client_name)
 			return
 			
 		var raw: String = body_bytes.get_string_from_utf8()
@@ -3946,7 +3954,7 @@ func _request_outpost_pickup_handoff_attempt(npc_name: String, part_name: String
 			if inner is Dictionary and inner.has("line"):
 				var line: String = str(inner["line"]).strip_edges()
 				if line != "":
-					var is_valid: bool = _is_valid_outpost_handoff_line(line, part_name)
+					var is_valid: bool = _is_valid_outpost_handoff_line(line, part_name, client_name)
 					if is_valid:
 						var voice_id: String = "neutral"
 						var voice_speed: float = 1.0
@@ -3957,21 +3965,22 @@ func _request_outpost_pickup_handoff_attempt(npc_name: String, part_name: String
 						TTSInterface.cache_dialogue_audio(line, voice_id, voice_speed)
 						return
 					else:
-						var reason: String = _explain_outpost_handoff_rejection(line, part_name)
+						var reason: String = _explain_outpost_handoff_rejection(line, part_name, client_name)
 						var new_suffix: String = "SELF-CRITIQUE — your previous attempt was rejected. Reason: " + reason
-						_request_outpost_pickup_handoff_attempt(npc_name, part_name, outpost_display, new_suffix, attempt + 1)
+						_request_outpost_pickup_handoff_attempt(npc_name, part_name, outpost_display, client_name, new_suffix, attempt + 1)
 						return
-		_apply_pickup_handoff_fallback(npc_name, part_name)
+		_apply_pickup_handoff_fallback(npc_name, part_name, client_name)
 	)
 	http.request(url, headers, HTTPClient.METHOD_POST, JSON.stringify(body))
 
-func _is_valid_outpost_handoff_line(line: String, part_name: String) -> bool:
-	return _explain_outpost_handoff_rejection(line, part_name) == ""
+func _is_valid_outpost_handoff_line(line: String, part_name: String, client_name: String) -> bool:
+	return _explain_outpost_handoff_rejection(line, part_name, client_name) == ""
 
-func _explain_outpost_handoff_rejection(line: String, part_name: String) -> String:
+func _explain_outpost_handoff_rejection(line: String, part_name: String, client_name: String) -> String:
 	var lower: String = line.to_lower()
-	if not lower.contains("jenna"):
-		return "Failed to mention Jenna."
+	var client_first_name = client_name.split(" ")[0].to_lower()
+	if not lower.contains(client_first_name):
+		return "Failed to mention " + client_name + "."
 	
 	var part_words = part_name.to_lower().split(" ")
 	var has_part = false
@@ -3983,9 +3992,9 @@ func _explain_outpost_handoff_rejection(line: String, part_name: String) -> Stri
 		return "Failed to mention the required part."
 	return ""
 
-func _apply_pickup_handoff_fallback(npc_name: String, part_name: String) -> void:
+func _apply_pickup_handoff_fallback(npc_name: String, part_name: String, client_name: String) -> void:
 	var salt: int = randi() % FALLBACK_OUTPOST_HANDOFF.size()
-	var line: String = FALLBACK_OUTPOST_HANDOFF[salt].replace("{part}", part_name)
+	var line: String = FALLBACK_OUTPOST_HANDOFF[salt].replace("{part}", part_name).replace("{client}", client_name)
 	
 	var voice_id: String = "neutral"
 	var voice_speed: float = 1.0
@@ -4333,8 +4342,9 @@ func _create_ship_upgrades_panel() -> void:
 	
 	# Close button
 	var close_btn = Button.new()
-	close_btn.text = " EXIT [X] "
-	close_btn.position = Vector2(40, 40)
+	close_btn.text = "Return"
+	_style_action_button(close_btn)
+	close_btn.position = Vector2(60, 40)
 	close_btn.pressed.connect(func():
 		ship_upgrades_panel.visible = false
 		dock_panel.visible = true
@@ -4422,6 +4432,7 @@ func _create_ship_upgrades_panel() -> void:
 	storage_vbox.add_child(su_ore_bank_lbl)
 	var dep_btn = Button.new()
 	dep_btn.text = "Deposit Ore from Ship"
+	dep_btn.tooltip_text = "Store your raw ore securely here. Banked ore is saved to your account and can be used later to fabricate ship upgrades."
 	_style_action_button(dep_btn)
 	dep_btn.pressed.connect(func():
 		if GlobalState.deposit_ore(GlobalState.cargo):
@@ -4436,9 +4447,12 @@ func _create_ship_upgrades_panel() -> void:
 	t_lbl2.text = "SHIP SYSTEMS"
 	t_lbl2.add_theme_color_override("font_color", Color(1.0, 0.6, 0.2))
 	su_ship_sys_vbox.add_child(t_lbl2)
-	su_ship_sys_lbl = Label.new()
+	su_ship_sys_lbl = RichTextLabel.new()
+	su_ship_sys_lbl.bbcode_enabled = true
+	su_ship_sys_lbl.fit_content = true
+	su_ship_sys_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD
 	su_ship_sys_lbl.text = "\n\nSelect a system to view details.\n"
-	su_ship_sys_lbl.add_theme_color_override("font_color", Color(0.8, 0.8, 0.8))
+	su_ship_sys_lbl.add_theme_color_override("default_color", Color(0.8, 0.8, 0.8))
 	su_ship_sys_vbox.add_child(su_ship_sys_lbl)
 	right_panel.add_child(su_ship_sys_vbox)
 
@@ -4507,10 +4521,73 @@ func _on_su_slot_pressed(slot: String) -> void:
 			_refresh_upgrade_ui()
 		)
 		su_ship_sys_vbox.add_child(ref_btn)
+var _insufficient_credits_lines: Array = [
+	"You're going to need a whole lot more credits for that purchase. Come back when you're not broke.",
+	"I don't run a charity here, Indy. Get some more credits and we'll talk.",
+	"Your account is looking a little light for that tier of hardware.",
+	"If you want the good stuff, you gotta pay for it. Check your credit balance.",
+	"Sorry, but I can't install that on good faith alone. Credits upfront."
+]
+
+var _insufficient_ore_lines: Array = [
+	"I can't install it without the ore for the printer. Get mining.",
+	"The fabrication printer is hungry. Bring me more raw ore if you want this.",
+	"We're short on the raw materials for this upgrade. Go crack some rocks.",
+	"You want me to build that out of thin air? I need more ore in the hopper.",
+	"My printer needs more ore to lay down that schematic. Go fill your hold."
+]
+
+var _insufficient_power_lines: Array = [
+	"Even if I wanted to install that, you ain't got the power to run it in that bird. I won't waste my time on something you can't even use.",
+	"Your powerplant would choke trying to spool that up. Upgrade your reactor first.",
+	"I'm not installing that just to watch your ship go dark when you flip the switch. Not enough power.",
+	"You're drawing too much juice already. Get a better powerplant before adding more toys.",
+	"That system needs more megawatts than your jalopy can put out. Upgrade the powerplant."
+]
+
+var _credit_idx: int = 0
+var _ore_idx: int = 0
+var _power_idx: int = 0
 
 func _attempt_upgrade(slot: String, path: String):
+	# Calculate failure reason beforehand if any
+	var info = GlobalState.current_upgrades[slot]
+	var next_tier = info["tier"] + 1
+	var data = GlobalState.UPGRADE_TREE[slot]["branches"][path][next_tier]
+	var cost_cr = data["cost_cr"]
+	var cost_ore = data["cost_ore"]
+	var next_power = data.get("power", 0)
+	var current_power = GlobalState.UPGRADE_TREE[slot]["base_power"]
+	if info["tier"] > 1:
+		current_power = GlobalState.UPGRADE_TREE[slot]["branches"][info["path"]][info["tier"]].get("power", 0)
+	var power_diff = next_power - current_power
+	
+	var reason = ""
+	if slot != "power" and GlobalState.get_current_power_draw() + power_diff > GlobalState.power_capacity:
+		reason = "power"
+	elif GlobalState.player_credits < cost_cr:
+		reason = "credits"
+	elif GlobalState.cargo_type != GlobalState.CargoType.ORE or GlobalState.cargo < cost_ore:
+		reason = "ore"
+		
+	if reason != "":
+		var line = ""
+		if reason == "power":
+			line = _insufficient_power_lines[_power_idx]
+			_power_idx = (_power_idx + 1) % _insufficient_power_lines.size()
+		elif reason == "credits":
+			line = _insufficient_credits_lines[_credit_idx]
+			_credit_idx = (_credit_idx + 1) % _insufficient_credits_lines.size()
+		elif reason == "ore":
+			line = _insufficient_ore_lines[_ore_idx]
+			_ore_idx = (_ore_idx + 1) % _insufficient_ore_lines.size()
+		# Replace generic red text with Jenna's dialogue
+		su_ship_sys_lbl.text += "\n\n[color=#FF7777]\"%s\"[/color]" % line
+		TTSInterface.play_dialogue_audio(line, "af_aoede", 1.0)
+		return
+
 	if GlobalState.purchase_upgrade(slot, path):
 		_on_su_slot_pressed(slot)
 		_refresh_upgrade_ui()
 	else:
-		su_ship_sys_lbl.text += "\n[color=red]INSUFFICIENT FUNDS OR POWER[/color]"
+		su_ship_sys_lbl.text += "\n[color=red]UPGRADE FAILED[/color]"
