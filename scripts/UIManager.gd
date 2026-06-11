@@ -10,6 +10,7 @@ var target_panel: PanelContainer
 var target_label: Label
 var target_icon: TextureRect
 var target_action_box: HBoxContainer
+var target_action_btn: Button
 var icons_sheet = preload("res://assets/icons.png")
 
 var overview_panel: Panel
@@ -552,6 +553,21 @@ func _create_target_panel():
 				show_target_marker(t.global_position)
 	)
 	target_action_box.add_child(orb_btn)
+	
+	target_action_btn = Button.new()
+	target_action_btn.name = "TargetActionButton"
+	target_action_btn.pressed.connect(func():
+		var t = GlobalState.active_target
+		if t and is_instance_valid(t) and GlobalState.player:
+			if t.is_in_group("asteroid"):
+				GlobalState.player.set("nav_mode", "MINE")
+			elif t.is_in_group("station"):
+				GlobalState.player.set("nav_mode", "DOCK")
+			else:
+				GlobalState.player.set("nav_mode", "ATTACK")
+			show_target_marker(t.global_position)
+	)
+	target_action_box.add_child(target_action_btn)
 	
 	target_panel.visible = false
 
@@ -1657,6 +1673,19 @@ func _on_target_changed(new_target: Node3D):
 			atlas.region = Rect2(col * 384, row * 512, 384, 512)
 			target_icon.texture = atlas
 			target_icon.visible = true
+			
+		if target_action_btn:
+			if new_target.is_in_group("asteroid"):
+				target_action_btn.text = "Mine Asteroid"
+				target_action_btn.visible = true
+			elif new_target.is_in_group("station"):
+				target_action_btn.text = "Dock at Station"
+				target_action_btn.visible = true
+			elif new_target.is_in_group("ship"):
+				target_action_btn.text = "Attack Hostile"
+				target_action_btn.visible = true
+			else:
+				target_action_btn.visible = false
 	else:
 		target_panel.visible = false
 		target_label.text = "No Target Selected"
