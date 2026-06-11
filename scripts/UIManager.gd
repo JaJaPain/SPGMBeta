@@ -85,6 +85,13 @@ var upgrade_laser_btn: Button
 var repair_btn: Button
 var agent_service_btn: Button
 var maintenance_bay_btn: Button
+var ship_upgrades_btn: Button
+var ship_upgrades_panel: Panel
+var su_weapons_btn: Button
+var su_cargo_btn: Button
+var su_engine_btn: Button
+var su_power_btn: Button
+var su_shields_btn: Button
 var back_to_services_btn: Button
 var test_pickup_btn: Button
 var test_deliver_btn: Button
@@ -218,6 +225,7 @@ func _ready():
 	_create_target_panel()
 	_create_overview()
 	_create_dock_menu()
+	_create_ship_upgrades_panel()
 	_create_context_menu()
 	_create_death_screen()
 	_create_pause_menu()
@@ -988,6 +996,11 @@ func _create_dock_menu():
 	maintenance_bay_btn.text = "Maintenance Bay (Grease Monkeys)"
 	maintenance_bay_btn.pressed.connect(_on_maintenance_bay_pressed)
 	vbox.add_child(maintenance_bay_btn)
+
+	ship_upgrades_btn = Button.new()
+	ship_upgrades_btn.text = "Ship Upgrades (Rusthawk UI)"
+	ship_upgrades_btn.pressed.connect(_on_ship_upgrades_pressed)
+	vbox.add_child(ship_upgrades_btn)
 
 	back_to_services_btn = Button.new()
 	back_to_services_btn.text = "Back to Services"
@@ -1824,6 +1837,7 @@ func _render_dock_submenu() -> void:
 		sell_btn.visible = false
 		agent_service_btn.visible = false
 		maintenance_bay_btn.visible = false
+		ship_upgrades_btn.visible = true
 		upgrade_cargo_btn.visible = true
 		upgrade_laser_btn.visible = true
 		repair_btn.visible = true
@@ -1859,6 +1873,7 @@ func _render_dock_submenu() -> void:
 		sell_btn.visible = not is_outpost
 		agent_service_btn.visible = not is_outpost
 		maintenance_bay_btn.visible = not is_outpost
+		ship_upgrades_btn.visible = false
 		upgrade_cargo_btn.visible = false
 		upgrade_laser_btn.visible = false
 		repair_btn.visible = false
@@ -2542,6 +2557,8 @@ func _on_npc_flavor_spoken(flavor: Dictionary) -> void:
 
 func undock_player():
 	dock_panel.visible = false
+	if ship_upgrades_panel and is_instance_valid(ship_upgrades_panel):
+		ship_upgrades_panel.visible = false
 	agent_panel.visible = false
 	current_station = null
 	# Reset submenu so the next dock opens on services, not maintenance
@@ -4284,3 +4301,121 @@ func show_kaelen_intro():
 	# ── Play Kaelen's voice ───────────────────────────────────────────────────
 	TTSInterface.play_dialogue_audio(line, "neutral")
 	print("[UIManager] Kaelen intro shown: ", line.left(60), "...")
+
+# ── Ship Upgrades UI ────────────────────────────────────────────────────────
+func _create_ship_upgrades_panel() -> void:
+	ship_upgrades_panel = Panel.new()
+	ship_upgrades_panel.name = "ShipUpgradesPanel"
+	ship_upgrades_panel.visible = false
+	ship_upgrades_panel.set_anchors_preset(Control.PRESET_FULL_RECT)
+	
+	var style = StyleBoxFlat.new()
+	style.bg_color = Color(0.02, 0.02, 0.02, 0.98) # Very dark background
+	ship_upgrades_panel.add_theme_stylebox_override("panel", style)
+	add_child(ship_upgrades_panel)
+	
+	# Background image
+	var bg = TextureRect.new()
+	bg.texture = load("res://assets/UI_Background.png")
+	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
+	bg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	bg.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	ship_upgrades_panel.add_child(bg)
+	
+	# Central Ship Image (Dynamically composited)
+	var ship_image = TextureRect.new()
+	ship_image.texture = load("res://assets/INDYMiner_render_side.png")
+	ship_image.set_anchors_preset(Control.PRESET_CENTER)
+	ship_image.custom_minimum_size = Vector2(1100, 650)
+	ship_image.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	ship_image.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	ship_image.position = -ship_image.custom_minimum_size / 2
+	ship_upgrades_panel.add_child(ship_image)
+	
+	# Close button
+	var close_btn = Button.new()
+	close_btn.text = " EXIT [X] "
+	close_btn.position = Vector2(40, 40)
+	close_btn.pressed.connect(func():
+		ship_upgrades_panel.visible = false
+		dock_panel.visible = true
+	)
+	ship_upgrades_panel.add_child(close_btn)
+	
+	# Slots (approximated positions relative to center)
+	# Since it's a fullscreen UI, we'll place an invisible Control at center
+	var center = Control.new()
+	center.set_anchors_preset(Control.PRESET_CENTER)
+	ship_upgrades_panel.add_child(center)
+	
+	# Helper to create invisible but clickable slot areas
+	var _create_slot = func(text: String, pos: Vector2, size: Vector2, cb: Callable):
+		var btn = Button.new()
+		btn.text = text
+		btn.position = pos - size/2
+		btn.custom_minimum_size = size
+		var sb = StyleBoxFlat.new()
+		sb.bg_color = Color(0, 0, 0, 0.65)
+		sb.border_width_left = 2
+		sb.border_width_top = 2
+		sb.border_width_right = 2
+		sb.border_width_bottom = 2
+		sb.border_color = Color(1.0, 0.6, 0.2, 0.8) # Orange border
+		sb.corner_radius_top_left = 4
+		sb.corner_radius_top_right = 4
+		sb.corner_radius_bottom_right = 4
+		sb.corner_radius_bottom_left = 4
+		btn.add_theme_stylebox_override("normal", sb)
+		btn.add_theme_stylebox_override("hover", sb)
+		btn.pressed.connect(cb)
+		center.add_child(btn)
+		return btn
+	
+	su_weapons_btn = _create_slot.call("WEAPONS\nPulse Laser Mk II\n25 Yield", Vector2(-420, 20), Vector2(220, 100), func(): _on_su_slot_pressed("weapons"))
+	su_cargo_btn = _create_slot.call("CARGOHOLD\nStandard Bay\n0 / 100 SCU", Vector2(0, 40), Vector2(250, 100), func(): _on_su_slot_pressed("cargo"))
+	su_engine_btn = _create_slot.call("ENGINE\nNova Thrusters\n120 m/s", Vector2(420, 20), Vector2(220, 100), func(): _on_su_slot_pressed("engine"))
+	su_power_btn = _create_slot.call("POWERPLANT\nFusion Core\n500 MW", Vector2(-250, 240), Vector2(220, 100), func(): _on_su_slot_pressed("power"))
+	su_shields_btn = _create_slot.call("SHIELDS\nAegis Deflector\n1200 HP", Vector2(0, -220), Vector2(220, 100), func(): _on_su_slot_pressed("shields"))
+
+	# Bottom info panels
+	var bottom_hbox = HBoxContainer.new()
+	bottom_hbox.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+	bottom_hbox.offset_top = -220
+	bottom_hbox.offset_bottom = -20
+	bottom_hbox.add_theme_constant_override("separation", 120)
+	bottom_hbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	ship_upgrades_panel.add_child(bottom_hbox)
+	
+	var _create_info_box = func(title: String, body: String):
+		var vbox = VBoxContainer.new()
+		vbox.custom_minimum_size = Vector2(250, 0)
+		var t_lbl = Label.new()
+		t_lbl.text = title
+		t_lbl.add_theme_color_override("font_color", Color(1.0, 0.6, 0.2))
+		vbox.add_child(t_lbl)
+		var b_lbl = Label.new()
+		b_lbl.text = body
+		b_lbl.add_theme_color_override("font_color", Color(0.8, 0.8, 0.8))
+		vbox.add_child(b_lbl)
+		bottom_hbox.add_child(vbox)
+		return b_lbl
+		
+	var su_sys_status = _create_info_box.call("SYSTEM STATUS", "ENGINE\t\t\tOnline\nWEAPONS\t\tNominal\nCARGOHOLD\tSecure\nSHIELDS\t\t\tCharging\nPOWERPLANT\tStable")
+	var su_ship_sys = _create_info_box.call("SHIP SYSTEMS", "\n\nSelect a system to view details.\n")
+	var su_ship_overview = _create_info_box.call("SHIP OVERVIEW", "SPEED\t\t\t\t\t\t\t78 m/s\nMANEUVERABILITY\t\t62%\nSHIELD STRENGTH\t\t1,200 HP\nHULL INTEGRITY\t\t\t2,400 HP")
+
+func _on_ship_upgrades_pressed() -> void:
+	dock_panel.visible = false
+	ship_upgrades_panel.visible = true
+	# Initialize stats based on current global state
+	su_cargo_btn.text = "CARGOHOLD\nStandard Bay\n%d / %d SCU" % [GlobalState.cargo, GlobalState.cargo_max]
+
+func _on_su_slot_pressed(slot: String) -> void:
+	match slot:
+		"cargo":
+			_upgrade_cargo()
+			su_cargo_btn.text = "CARGOHOLD\nStandard Bay\n%d / %d SCU" % [GlobalState.cargo, GlobalState.cargo_max]
+		"weapons":
+			_upgrade_laser()
+		"shields", "engine", "power":
+			print("Slot clicked: ", slot)
