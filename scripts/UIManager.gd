@@ -1978,12 +1978,16 @@ func _cache_mechanic_intro() -> void:
 	var best_tier: String = _best_reputation_tier()
 	var ship: String = PLAYER_SHIP_NAME
 	var credits: int = GlobalState.player_credits
+	
+	var active_quest: Dictionary = {}
+	if QuestManager.is_quest_active() and QuestManager.active_quest.get("objective_type", "") == "PICKUP_SPECIAL":
+		active_quest = QuestManager.active_quest
 
 	# If LLM is reachable, try the real call. LLMInterface is the same
 	# path used for Kaelen handoffs, so we know it works end-to-end.
 	# (request_mechanic_intro is added below as a thin wrapper so the
 	# prompt stays local to this feature rather than spamming LLMInterface.)
-	_request_mechanic_intro(ship, worst_tier, best_tier, credits, _mechanic_pickup_offer, func(line: String, is_fallback: bool) -> void:
+	_request_mechanic_intro(ship, worst_tier, best_tier, credits, _mechanic_pickup_offer, active_quest, func(line: String, is_fallback: bool) -> void:
 		# Stale-callback guard: only the latest request wins. If a newer
 		# Speak click already fired (request_id > mine), bail without
 		# touching the cache or playing anything.
@@ -2011,18 +2015,18 @@ func _cache_mechanic_intro() -> void:
 # Thin wrapper around the LLM. Falls back to a tier-weighted canned line
 # if the model is offline / slow / returns garbage. The prompt is built
 # locally so this feature stays self-contained.
-func _request_mechanic_intro(ship: String, worst_tier: String, best_tier: String, credits: int, offer: Dictionary, callback: Callable) -> void:
+func _request_mechanic_intro(ship: String, worst_tier: String, best_tier: String, credits: int, offer: Dictionary, active_quest: Dictionary, callback: Callable) -> void:
 	if LLMInterface.active_model_name == "":
-		var fb: String = _pick_fallback_mechanic_greeting(ship, worst_tier, best_tier, offer)
+		var fb: String = _pick_fallback_mechanic_greeting(ship, worst_tier, best_tier, offer, active_quest)
 		callback.call(fb, true)
 		return
 	
-	var prompt: String = _build_mechanic_intro_prompt(ship, worst_tier, best_tier, credits, offer)
-	_request_mechanic_intro_attempt(prompt, ship, worst_tier, best_tier, offer, callback, "", 0)
+	var prompt: String = _build_mechanic_intro_prompt(ship, worst_tier, best_tier, credits, offer, active_quest)
+	_request_mechanic_intro_attempt(prompt, ship, worst_tier, best_tier, offer, active_quest, callback, "", 0)
 
 # Builds the system prompt for the mechanic intro. Appends the pickup offer
 # instructions if an offer is active.
-func _build_mechanic_intro_prompt(ship: String, worst_tier: String, best_tier: String, credits: int, offer: Dictionary) -> String:
+func _build_mechanic_intro_prompt(ship: String, worst_tier: String, best_tier: String, credits: int, offer: Dictionary, active_quest: Dictionary) -> String:
 	var examples: Array = [
 		FALLBACK_MECHANIC_GREETINGS[0],
 		FALLBACK_MECHANIC_GREETINGS[4],
@@ -2050,7 +2054,29 @@ func _build_mechanic_intro_prompt(ship: String, worst_tier: String, best_tier: S
 	)
 	
 	var reqs: String = ""
-	if offer.get("offer", false):
+	if active_quest.has("part_name"):
+		var part_name: String = active_quest.get("part_name", "the part")
+		var target_outpost: String = active_quest.get("target_outpost_display", "an outpost")
+		var has_part: bool = active_quest.get("picked_up", false)
+		
+		prompt += (
+			"- Part we are talking about: \"" + part_name + "\"\n"
+			+ "- Player has picked it up: " + ("Yes" if has_part else "No") + "\n\n"
+		)
+		
+		if not has_part:
+			reqs = (
+				"1. 2-3 sentences, max 250 chars.\n"
+				+ "2. You MUST mention the ship name \"" + ship + "\" literally (or a short form like \"that crate\").\n"
+				+ "3. You MUST ask the player why they don't have \"" + part_name + "\" yet, or tell them to hurry up and go to \"" + target_outpost + "\".\n"
+			)
+		else:
+			reqs = (
+				"1. 2-3 sentences, max 250 chars.\n"
+				+ "2. You MUST mention the ship name \"" + ship + "\" literally (or a short form like \"that crate\").\n"
+				+ "3. You MUST acknowledge they brought \"" + part_name + "\" and tell them to hand it over or drop it.\n"
+			)
+	elif offer.get("offer", false):
 		var target_npc: String = offer.get("npc_name", "someone")
 		var target_outpost: String = offer.get("outpost_display", "an outpost")
 		var part_name: String = offer.get("part_name", "a part")
@@ -2087,10 +2113,10 @@ func _build_mechanic_intro_prompt(ship: String, worst_tier: String, best_tier: S
 # Recursive attempt handler for the mechanic intro. Evaluates the LLM's
 # response against _is_valid_mechanic_line. If it fails, appends the
 # rejection reason as a self-critique suffix and tries again (up to a limit).
-func _request_mechanic_intro_attempt(base_prompt: String, ship: String, worst_tier: String, best_tier: String, offer: Dictionary, callback: Callable, critique_suffix: String, attempt: int) -> void:
+func _request_mechanic_intro_attempt(base_prompt: String, ship: String, worst_tier: String, best_tier: String, offer: Dictionary, active_quest: Dictionary, callback: Callable, critique_suffix: String, attempt: int) -> void:
 	if attempt >= 2:
 		print("[TRACE] [UIManager] Mechanic LLM failed all attempts. Falling back.")
-		callback.call(_pick_fallback_mechanic_greeting(ship, worst_tier, best_tier, offer), true)
+		callback.call(_pick_fallback_mechanic_greeting(ship, worst_tier, best_tier, offer, active_quest), true)
 		return
 		
 	var url: String = LLMInterface.OLLAMA_URL
@@ -2113,7 +2139,7 @@ func _request_mechanic_intro_attempt(base_prompt: String, ship: String, worst_ti
 	http.request_completed.connect(func(result: int, code: int, _h: PackedStringArray, body_bytes: PackedByteArray) -> void:
 		http.queue_free()
 		if result != HTTPRequest.RESULT_SUCCESS or code != 200:
-			var fb = _pick_fallback_mechanic_greeting(ship, worst_tier, best_tier, offer)
+			var fb = _pick_fallback_mechanic_greeting(ship, worst_tier, best_tier, offer, active_quest)
 			callback.call(fb, true)
 			return
 			
@@ -2125,37 +2151,47 @@ func _request_mechanic_intro_attempt(base_prompt: String, ship: String, worst_ti
 			if inner is Dictionary and inner.has("line"):
 				var line: String = str(inner["line"]).strip_edges()
 				if line != "":
-					var is_valid: bool = _is_valid_mechanic_line(line, ship, worst_tier, best_tier, offer)
+					var is_valid: bool = _is_valid_mechanic_line(line, ship, worst_tier, best_tier, offer, active_quest)
 					if is_valid:
 						print("[TRACE] [UIManager] Mechanic LLM line accepted on attempt ", attempt, ": \"", line.left(80), "...\"")
 						callback.call(line, false)
 						return
 					else:
-						var reason: String = _explain_mechanic_line_rejection(line, ship, worst_tier, best_tier, offer)
+						var reason: String = _explain_mechanic_line_rejection(line, ship, worst_tier, best_tier, offer, active_quest)
 						print("[TRACE] [UIManager] Mechanic LLM line REJECTED on attempt ", attempt, ": ", reason, " (", line, ")")
 						var new_suffix: String = "SELF-CRITIQUE — your previous attempt was rejected. Reason: " + reason
-						_request_mechanic_intro_attempt(base_prompt, ship, worst_tier, best_tier, offer, callback, new_suffix, attempt + 1)
+						_request_mechanic_intro_attempt(base_prompt, ship, worst_tier, best_tier, offer, active_quest, callback, new_suffix, attempt + 1)
 						return
 		
 		# Fallback on parse error
-		var fb = _pick_fallback_mechanic_greeting(ship, worst_tier, best_tier, offer)
+		var fb = _pick_fallback_mechanic_greeting(ship, worst_tier, best_tier, offer, active_quest)
 		callback.call(fb, true)
 	)
 	http.request(url, headers, HTTPClient.METHOD_POST, JSON.stringify(body))
 
 # Validation rules for Jenna's generated line.
-func _is_valid_mechanic_line(line: String, ship: String, worst_tier: String, best_tier: String, offer: Dictionary) -> bool:
-	return _explain_mechanic_line_rejection(line, ship, worst_tier, best_tier, offer) == ""
+func _is_valid_mechanic_line(line: String, ship: String, worst_tier: String, best_tier: String, offer: Dictionary, active_quest: Dictionary) -> bool:
+	return _explain_mechanic_line_rejection(line, ship, worst_tier, best_tier, offer, active_quest) == ""
 
 # Returns the reason why a mechanic line failed validation, or "" if it passes.
-func _explain_mechanic_line_rejection(line: String, ship: String, worst_tier: String, best_tier: String, offer: Dictionary) -> String:
+func _explain_mechanic_line_rejection(line: String, ship: String, worst_tier: String, best_tier: String, offer: Dictionary, active_quest: Dictionary) -> String:
 	var lower: String = line.to_lower()
 	var ship_l: String = ship.to_lower()
 	var ship_short: String = ship_l.split(" ")[0]
 	if not (lower.contains(ship_l) or lower.contains(ship_short) or lower.contains("that crate") or lower.contains("your crate") or lower.contains("your ship") or lower.contains("your rig")):
 		return "Failed to mention the ship name or refer to the ship."
 	
-	if offer.get("offer", false):
+	if active_quest.has("part_name"):
+		var part_name: String = active_quest.get("part_name", "").to_lower()
+		var part_words = part_name.split(" ")
+		var has_part = false
+		for w in part_words:
+			if w.length() > 3 and lower.contains(w):
+				has_part = true
+				break
+		if not has_part and not lower.contains(part_name):
+			return "Failed to mention the required part ('" + part_name + "')."
+	elif offer.get("offer", false):
 		var target_npc: String = offer.get("npc_name", "").to_lower()
 		var target_outpost: String = offer.get("outpost_display", "").to_lower()
 		var part_name: String = offer.get("part_name", "").to_lower()
@@ -2200,7 +2236,15 @@ func _explain_mechanic_line_rejection(line: String, ship: String, worst_tier: St
 	return ""
 
 # Pick a canned line.
-func _pick_fallback_mechanic_greeting(ship: String, worst_tier: String, best_tier: String, offer: Dictionary) -> String:
+func _pick_fallback_mechanic_greeting(ship: String, worst_tier: String, best_tier: String, offer: Dictionary, active_quest: Dictionary) -> String:
+	if active_quest.has("part_name"):
+		var part = active_quest.get("part_name", "the part")
+		var has_part = active_quest.get("picked_up", false)
+		if not has_part:
+			return "Where's my %s? Don't tell me you got lost, Indy." % part
+		else:
+			return "You actually got the %s. Drop it on the bench before you break it." % part
+
 	var salt: int = randi() % 10
 	var idx: int = (worst_tier.length() + best_tier.length() + salt) % 10
 	var line: String = FALLBACK_MECHANIC_GREETINGS[idx]
@@ -2223,7 +2267,10 @@ func _render_mechanic_intro() -> void:
 	var line: String = _cached_mechanic_line
 	var line_changed: bool = false
 	if line.strip_edges() == "":
-		line = _pick_fallback_mechanic_greeting(PLAYER_SHIP_NAME, _worst_reputation_tier(), _best_reputation_tier(), _mechanic_pickup_offer)
+		var active_quest: Dictionary = {}
+		if QuestManager.is_quest_active() and QuestManager.active_quest.get("objective_type", "") == "PICKUP_SPECIAL":
+			active_quest = QuestManager.active_quest
+		line = _pick_fallback_mechanic_greeting(PLAYER_SHIP_NAME, _worst_reputation_tier(), _best_reputation_tier(), _mechanic_pickup_offer, active_quest)
 		_cached_mechanic_line = line
 		_cached_mechanic_line_is_fallback = true
 		
@@ -2341,6 +2388,13 @@ func _on_test_deliver_pressed() -> void:
 	QuestManager.complete_quest()
 	show_hud_warning("Delivered '%s' to Grease Monkeys. +%d SC." % [part_name, TEST_PICKUP_REWARD])
 
+const FALLBACK_MECHANIC_THANKS: Array = [
+	"Thanks for the {part}. I'd say you're my favorite courier, but my dog brings me things faster. Here's your creds.",
+	"Got the {part}. It's a miracle you didn't explode on the way back. Take your money and get out of my bay.",
+	"Not bad, Indy. Next time try not to scuff the casing. Credits are in your account.",
+	"I'll take that {part}. You're almost useful when you're not getting shot at. Don't spend the payout all in one place.",
+]
+
 func _on_deliver_part_pressed() -> void:
 	if not QuestManager.is_quest_active() or not QuestManager.is_quest_completed():
 		return
@@ -2348,9 +2402,12 @@ func _on_deliver_part_pressed() -> void:
 	var reward: int = QuestManager.active_quest.get("reward_credits", 0)
 	QuestManager.complete_quest()
 	
-	var msg = "You dropped off the %s. Jenna tossed you %d SC." % [part_name, reward]
+	var salt: int = randi() % FALLBACK_MECHANIC_THANKS.size()
+	var line: String = FALLBACK_MECHANIC_THANKS[salt].replace("{part}", part_name)
+	
+	TTSInterface.play_dialogue_audio(line, "af_aoede", 1.0)
 	var portrait_tex: Texture2D = GlobalState.get_minor_npc_portrait("Jenna Kross")
-	show_dock_message(msg, "Jenna Kross", Color(1.0, 0.85, 0.4), portrait_tex)
+	show_dock_message(line, "Jenna Kross", Color(1.0, 0.85, 0.4), portrait_tex)
 	_render_dock_submenu()
 
 
