@@ -62,6 +62,22 @@ var _mechanic_request_id: int = 0
 # same line when the player toggles between Services and Maintenance
 # submenus (which both call _render_mechanic_intro).
 var _last_played_mechanic_line: String = ""
+
+# Mechanic pickup-offer state.
+var _mechanic_pickup_offer: Dictionary = {}
+var _mechanic_pickup_declined: bool = false
+var mechanic_pickup_accept_btn: Button
+var mechanic_pickup_decline_btn: Button
+
+# Ore-trade confirm dialog
+var ore_trade_popup: PanelContainer
+var ore_trade_label: Label
+var ore_trade_accept_btn: Button
+var ore_trade_decline_btn: Button
+var ask_for_part_btn: Button
+var deliver_part_btn: Button
+const DEBUG_TESTS: bool = false
+
 var sell_btn: Button
 var upgrade_cargo_btn: Button
 var upgrade_laser_btn: Button
@@ -765,6 +781,22 @@ func _create_dock_menu():
 	mechanic_line_label.add_theme_constant_override("shadow_outline_size", 2)
 	mech_text_vbox.add_child(mechanic_line_label)
 
+	var offer_btns_hbox := HBoxContainer.new()
+	offer_btns_hbox.add_theme_constant_override("separation", 6)
+	mech_text_vbox.add_child(offer_btns_hbox)
+
+	mechanic_pickup_accept_btn = Button.new()
+	mechanic_pickup_accept_btn.text = "I'll grab it"
+	mechanic_pickup_accept_btn.visible = false
+	mechanic_pickup_accept_btn.pressed.connect(_on_mechanic_pickup_accept_pressed)
+	offer_btns_hbox.add_child(mechanic_pickup_accept_btn)
+
+	mechanic_pickup_decline_btn = Button.new()
+	mechanic_pickup_decline_btn.text = "Not now"
+	mechanic_pickup_decline_btn.visible = false
+	mechanic_pickup_decline_btn.pressed.connect(_on_mechanic_pickup_decline_pressed)
+	offer_btns_hbox.add_child(mechanic_pickup_decline_btn)
+
 	# Docked-message slot. Hidden by default; surfaces flavor lines
 	# (Hear Gossip) and quest pickup responses inside the dock panel.
 	# See show_dock_message() for the display + auto-dismiss logic.
@@ -820,6 +852,55 @@ func _create_dock_menu():
 	dock_message_line.add_theme_constant_override("shadow_outline_size", 2)
 	msg_text_vbox.add_child(dock_message_line)
 
+	ore_trade_popup = PanelContainer.new()
+	ore_trade_popup.name = "OreTradePopup"
+	ore_trade_popup.visible = false
+	ore_trade_popup.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var otp_style := StyleBoxFlat.new()
+	otp_style.bg_color = Color(0.08, 0.06, 0.04, 0.95)
+	otp_style.border_width_left = 1
+	otp_style.border_width_top = 1
+	otp_style.border_width_right = 1
+	otp_style.border_width_bottom = 1
+	otp_style.border_color = Color(1.0, 0.7, 0.3, 0.7)
+	otp_style.corner_radius_top_left = 4
+	otp_style.corner_radius_top_right = 4
+	otp_style.corner_radius_bottom_right = 4
+	otp_style.corner_radius_bottom_left = 4
+	otp_style.content_margin_left = 10
+	otp_style.content_margin_right = 10
+	otp_style.content_margin_top = 8
+	otp_style.content_margin_bottom = 8
+	ore_trade_popup.add_theme_stylebox_override("panel", otp_style)
+	vbox.add_child(ore_trade_popup)
+
+	var otp_vbox := VBoxContainer.new()
+	otp_vbox.add_theme_constant_override("separation", 8)
+	ore_trade_popup.add_child(otp_vbox)
+
+	ore_trade_label = Label.new()
+	ore_trade_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	ore_trade_label.autowrap_mode = TextServer.AUTOWRAP_WORD
+	ore_trade_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	ore_trade_label.add_theme_font_size_override("font_size", 14)
+	ore_trade_label.add_theme_color_override("font_shadow_color", Color.BLACK)
+	ore_trade_label.add_theme_constant_override("shadow_outline_size", 2)
+	otp_vbox.add_child(ore_trade_label)
+
+	var otp_btn_row := HBoxContainer.new()
+	otp_btn_row.add_theme_constant_override("separation", 8)
+	otp_vbox.add_child(otp_btn_row)
+
+	ore_trade_accept_btn = Button.new()
+	ore_trade_accept_btn.text = "Sell Ore, Take the Part"
+	ore_trade_accept_btn.pressed.connect(_on_ore_trade_accept_pressed)
+	otp_btn_row.add_child(ore_trade_accept_btn)
+
+	ore_trade_decline_btn = Button.new()
+	ore_trade_decline_btn.text = "No, Keep My Ore"
+	ore_trade_decline_btn.pressed.connect(_on_ore_trade_decline_pressed)
+	otp_btn_row.add_child(ore_trade_decline_btn)
+
 	sell_btn = Button.new()
 	sell_btn.text = "Sell Ore (1 SC per m³)"
 	sell_btn.pressed.connect(_sell_ore)
@@ -862,6 +943,18 @@ func _create_dock_menu():
 	test_pickup_part_btn.text = "Test: Pickup Part"
 	test_pickup_part_btn.pressed.connect(_on_test_pickup_part_pressed)
 	vbox.add_child(test_pickup_part_btn)
+
+	ask_for_part_btn = Button.new()
+	ask_for_part_btn.text = "Ask for the Part"
+	ask_for_part_btn.visible = false
+	ask_for_part_btn.pressed.connect(_on_ask_for_part_pressed)
+	vbox.add_child(ask_for_part_btn)
+
+	deliver_part_btn = Button.new()
+	deliver_part_btn.text = "Deliver Part"
+	deliver_part_btn.visible = false
+	deliver_part_btn.pressed.connect(_on_deliver_part_pressed)
+	vbox.add_child(deliver_part_btn)
 
 	# Outpost-only: surface a random minor-NPC flavor line. Shown only at
 	# outpost docks (see _render_dock_submenu).
@@ -1686,6 +1779,8 @@ func _render_dock_submenu() -> void:
 	# Clear any active docked message so a flavor line from the
 	# previous submenu doesn't bleed into the new one.
 	clear_dock_message()
+	if ore_trade_popup and is_instance_valid(ore_trade_popup):
+		ore_trade_popup.visible = false
 	# Outposts are remote stations with no sell/agent/maintenance. Only the
 	# dock actions that make sense there (test pickup, hear gossip) plus
 	# undock should appear in the services submenu.
@@ -1703,10 +1798,15 @@ func _render_dock_submenu() -> void:
 		upgrade_cargo_btn.visible = true
 		upgrade_laser_btn.visible = true
 		repair_btn.visible = true
-		test_pickup_btn.visible = true
-		test_deliver_btn.visible = true
+		test_pickup_btn.visible = DEBUG_TESTS
+		test_deliver_btn.visible = DEBUG_TESTS
 		test_pickup_part_btn.visible = false
 		hear_gossip_btn.visible = false
+		ask_for_part_btn.visible = false
+		
+		var can_deliver: bool = QuestManager.is_quest_active() and QuestManager.active_quest.get("objective_type", "") == "PICKUP_SPECIAL" and QuestManager.active_quest.get("picked_up", false)
+		deliver_part_btn.visible = can_deliver
+		
 		back_to_services_btn.visible = true
 		if dock_background:
 			if dock_background.texture == null:
@@ -1735,7 +1835,28 @@ func _render_dock_submenu() -> void:
 		repair_btn.visible = false
 		test_pickup_btn.visible = false
 		test_deliver_btn.visible = false
-		test_pickup_part_btn.visible = is_outpost
+		deliver_part_btn.visible = false
+		
+		var show_ask_btn: bool = false
+		if is_outpost and QuestManager.is_quest_active() \
+				and QuestManager.active_quest.get("objective_type", "") == "PICKUP_SPECIAL" \
+				and not QuestManager.active_quest.get("picked_up", false):
+			var docked_outpost_id_for_btn: String = OUTPOST_NODE_TO_ID.get(current_station.name, "") if current_station else ""
+			if docked_outpost_id_for_btn != "" and docked_outpost_id_for_btn == QuestManager.active_quest.get("target_outpost", ""):
+				show_ask_btn = true
+		ask_for_part_btn.visible = show_ask_btn
+		
+		if show_ask_btn:
+			var part_name: String = str(QuestManager.active_quest.get("part_name", "the part"))
+			var npc_name: String = str(QuestManager.active_quest.get("target_npc", "the contact"))
+			if GlobalState.cargo_type == GlobalState.CargoType.ORE and GlobalState.cargo > 0.0:
+				var rate: float = GlobalState.buyback_price_per_m3()
+				var payout: int = int(round(GlobalState.cargo * rate))
+				ask_for_part_btn.text = "Trade Ore for %s (%d m³ → %d SC)" % [part_name, int(GlobalState.cargo), payout]
+			else:
+				ask_for_part_btn.text = "Ask %s for %s" % [npc_name, part_name]
+		
+		test_pickup_part_btn.visible = DEBUG_TESTS and is_outpost
 		hear_gossip_btn.visible = is_outpost
 		back_to_services_btn.visible = false
 		if dock_background:
@@ -1799,6 +1920,9 @@ const FALLBACK_MECHANIC_GREETINGS: Array = [
 	"Heard you picked a fight with a Reaver in an INDY Miner and walked away. I'm calling bullshit, but I'm also curious. Pop the hood.",
 	"You know, when INDY Miner pilots start showing up at my bay, it's usually because they're one bad landing from exploding. Which one are you?",
 	"Yeah, yeah — famous pilot, dangerous reputation, pristine INDY Miner. Sit down before I charge you for standing in my workspace, Indy.",
+	"That {ship} looks like it could use some love. But first, I need a favor. Head to {outpost} and get {part} from {npc} for me.",
+	"Before we look at the {ship}, I'm short a {part}. Grab it from {npc} at {outpost} and I'll make it worth your while.",
+	"Nice {ship}. You want it fixed? Do me a solid. I left a {part} with {npc} over at {outpost}. Go get it."
 ]
 
 # Returns the tier name for the player's WORST faction reputation.
@@ -1843,6 +1967,9 @@ func _cache_mechanic_intro() -> void:
 	_cached_mechanic_line = ""
 	_cached_mechanic_line_is_fallback = false
 
+	_mechanic_pickup_offer = GlobalState.roll_pickup_offer()
+	_mechanic_pickup_declined = false
+
 	# Build context for the LLM. Keep it small — the 1.5b model chews
 	# tokens fast, and we want the line back in <2s. We feed the model
 	# the exact same canned lines as few-shot examples so the generated
@@ -1856,7 +1983,7 @@ func _cache_mechanic_intro() -> void:
 	# path used for Kaelen handoffs, so we know it works end-to-end.
 	# (request_mechanic_intro is added below as a thin wrapper so the
 	# prompt stays local to this feature rather than spamming LLMInterface.)
-	_request_mechanic_intro(ship, worst_tier, best_tier, credits, func(line: String, is_fallback: bool) -> void:
+	_request_mechanic_intro(ship, worst_tier, best_tier, credits, _mechanic_pickup_offer, func(line: String, is_fallback: bool) -> void:
 		# Stale-callback guard: only the latest request wins. If a newer
 		# Speak click already fired (request_id > mine), bail without
 		# touching the cache or playing anything.
@@ -1866,10 +1993,11 @@ func _cache_mechanic_intro() -> void:
 		_cached_mechanic_line = line
 		_cached_mechanic_line_is_fallback = is_fallback
 		_mechanic_precache_in_flight = false
-		print("[TRACE] [UIManager] Mechanic greeting cached. fallback=", is_fallback, " len=", line.length())
+		print("[TRACE] [UIManager] Mechanic greeting cached. fallback=", is_fallback, " len=", line.length(), " offer=", _mechanic_pickup_offer.get("offer", false))
 		# Pre-cache the TTS so the line is instant when the player enters
 		# maintenance. Uses Jenna's voice (af_aoede) for consistency with
-		# her other flavor lines.
+		# her other flavor lines. Skipped on fallback (already in cache or
+		# too short to be worth caching).
 		if not is_fallback and line.strip_edges() != "":
 			TTSInterface.cache_dialogue_audio(line, "af_aoede", 1.0)
 		# If the player is already inside the maintenance submenu, refresh
@@ -1883,30 +2011,34 @@ func _cache_mechanic_intro() -> void:
 # Thin wrapper around the LLM. Falls back to a tier-weighted canned line
 # if the model is offline / slow / returns garbage. The prompt is built
 # locally so this feature stays self-contained.
-func _request_mechanic_intro(ship: String, worst_tier: String, best_tier: String, credits: int, callback: Callable) -> void:
-	# Quick offline check — if LLMInterface has no active model, skip straight
-	# to the fallback. The Kaelen intro path uses the same gate.
+func _request_mechanic_intro(ship: String, worst_tier: String, best_tier: String, credits: int, offer: Dictionary, callback: Callable) -> void:
 	if LLMInterface.active_model_name == "":
-		var fb: String = _pick_fallback_mechanic_greeting(ship, worst_tier, best_tier)
+		var fb: String = _pick_fallback_mechanic_greeting(ship, worst_tier, best_tier, offer)
 		callback.call(fb, true)
 		return
-	# Build examples block (3 of 10, varied so the LLM doesn't latch onto
-	# one template). We feed ONLY Jenna lines, never Kaelen's, so the
-	# generated output stays in her voice.
+	
+	var prompt: String = _build_mechanic_intro_prompt(ship, worst_tier, best_tier, credits, offer)
+	_request_mechanic_intro_attempt(prompt, ship, worst_tier, best_tier, offer, callback, "", 0)
+
+# Builds the system prompt for the mechanic intro. Appends the pickup offer
+# instructions if an offer is active.
+func _build_mechanic_intro_prompt(ship: String, worst_tier: String, best_tier: String, credits: int, offer: Dictionary) -> String:
 	var examples: Array = [
 		FALLBACK_MECHANIC_GREETINGS[0],
 		FALLBACK_MECHANIC_GREETINGS[4],
 		FALLBACK_MECHANIC_GREETINGS[7],
 	]
+	# If an offer is rolling, use the offer templates (indices 10-12) instead
+	if offer.get("offer", false):
+		examples = [
+			FALLBACK_MECHANIC_GREETINGS[10],
+			FALLBACK_MECHANIC_GREETINGS[11],
+			FALLBACK_MECHANIC_GREETINGS[12],
+		]
 	var examples_block: String = ""
 	for ex in examples:
 		examples_block += "- \"" + ex + "\"\n"
-	# Stronger prompt: explicit speaker identity, hard requirements, and
-	# anti-Kaelen guard rails. The 1.5b model drifts easily if we just say
-	# "be Jenna" — naming the speaker, giving exact facts to weave in,
-	# and forbidding Kaelen phrases fixes the drift we saw in the first
-	# pass (LLM was returning Kaelen handoff lines like "Your best
-	# friend's always on standby").
+	
 	var prompt: String = (
 		"You ARE Jenna Kross, a grease-monkey mechanic at the main station dock. "
 		+ "You are NOT Broker Kaelen, NOT an agent, NOT a quest-giver. You fix ships for a living.\n\n"
@@ -1914,93 +2046,77 @@ func _request_mechanic_intro(ship: String, worst_tier: String, best_tier: String
 		+ "- Ship: \"" + ship + "\"\n"
 		+ "- Worst faction rep tier: \"" + worst_tier + "\"\n"
 		+ "- Best faction rep tier: \"" + best_tier + "\"\n"
-		+ "- Credits: " + str(credits) + "\n\n"
-		+ "Here are 3 of YOUR OWN (Jenna's) past greetings, in your exact voice:\n"
+		+ "- Credits: " + str(credits) + "\n"
+	)
+	
+	var reqs: String = ""
+	if offer.get("offer", false):
+		var target_npc: String = offer.get("npc_name", "someone")
+		var target_outpost: String = offer.get("outpost_display", "an outpost")
+		var part_name: String = offer.get("part_name", "a part")
+		prompt += (
+			"- Part needed: \"" + part_name + "\"\n"
+			+ "- Contact: \"" + target_npc + "\"\n"
+			+ "- Location: \"" + target_outpost + "\"\n\n"
+		)
+		reqs = (
+			"1. 2-3 sentences, max 300 chars.\n"
+			+ "2. You MUST mention the ship name \"" + ship + "\" literally (or a short form like \"that crate\").\n"
+			+ "3. You MUST ask the player to go to \"" + target_outpost + "\" to pick up \"" + part_name + "\" from \"" + target_npc + "\".\n"
+		)
+	else:
+		prompt += "\n"
+		reqs = (
+			"1. 1-2 sentences, max 200 chars.\n"
+			+ "2. You MUST mention the ship name \"" + ship + "\" literally (or a short form like \"that crate\").\n"
+			+ "3. You MUST reference the rep tier \"" + worst_tier + "\" OR \"" + best_tier + "\" OR the credit count. Pick one.\n"
+		)
+		
+	prompt += (
+		"Here are 3 of YOUR OWN (Jenna's) past greetings, in your exact voice:\n"
 		+ examples_block + "\n"
 		+ "Write ONE NEW greeting. HARD REQUIREMENTS:\n"
-		+ "1. 1-2 sentences, max 200 chars.\n"
-		+ "2. You MUST mention the ship name \"" + ship + "\" literally (or a short form like \"that crate\").\n"
-		+ "3. You MUST reference the rep tier \"" + worst_tier + "\" OR \"" + best_tier + "\" OR the credit count. Pick one.\n"
+		+ reqs
 		+ "4. Cocky mechanic voice — second person (\"you\"), observational, a little too personal.\n"
 		+ "5. NO phrases like \"your best friend\", \"stay put\", \"sit tight\", \"wait here\", \"I'll fetch\", \"hold on\", \"Shiny\". Those are KAELEN's phrases, not yours. Call the pilot \"Indy\" or just \"you\" — NEVER \"Shiny\".\n"
 		+ "6. NO hashtags, NO emojis, NO quotes around the line.\n\n"
 		+ "Output ONLY valid JSON: {\"line\": \"<your greeting>\"}"
 	)
-	# Fire the LLM call. The body reuses the Kaelen intro machinery via a
-	# direct Ollama request — no need to add a new LLMInterface method.
-	# (See _request_mechanic_intro_via_ollama below for the actual HTTP.)
-	_request_mechanic_intro_via_ollama(prompt, ship, worst_tier, best_tier, callback)
+	return prompt
 
-# Validate a generated Jenna line. Returns true if the line actually
-# sounds like her — names the ship and references rep/credits, and
-# doesn't contain Kaelen voice tells. Catches the first-pass drift
-# bug where the LLM returned a Kaelen handoff line.
-func _is_valid_mechanic_line(line: String, ship: String, worst_tier: String, best_tier: String) -> bool:
-	var lower: String = line.to_lower()
-	# Must mention the ship (or a short form of it). The 1.5b model
-	# sometimes abbreviates "INDY Miner" to "INDY" or "your crate".
-	var ship_l: String = ship.to_lower()
-	var ship_short: String = ship_l.split(" ")[0]  # "indy miner" -> "indy"
-	if not (lower.contains(ship_l) or lower.contains(ship_short) or lower.contains("that crate") or lower.contains("your crate") or lower.contains("your ship") or lower.contains("your rig")):
-		print("[TRACE] [UIManager] Mechanic line rejected: no ship reference. line=\"", line, "\"")
-		return false
-	# Must reference rep OR credits. Check for tier names, credit keywords,
-	# or a credit count in the line.
-	var rep_words: Array = ["reputation", "rep sheet", "rep", "watchlist", "hostile", "trusted", "allied", "friendly", "cordial", "enemy", "scorch", "wanted", "marked", "neutral"]
-	var has_rep: bool = false
-	for w in rep_words:
-		if lower.contains(w):
-			has_rep = true
-			break
-	var has_credits: bool = lower.contains("credit") or lower.contains("sc") or lower.contains("wallet") or lower.contains("broke") or lower.contains("rich")
-	# Also accept if either tier name appears literally.
-	if not has_rep:
-		if worst_tier != "neutral" and lower.contains(worst_tier):
-			has_rep = true
-		elif best_tier != "neutral" and lower.contains(best_tier):
-			has_rep = true
-	if not (has_rep or has_credits):
-		print("[TRACE] [UIManager] Mechanic line rejected: no rep/credit reference. line=\"", line, "\"")
-		return false
-	# Kaelen voice-tell filter. Hard reject any line that sounds like
-	# Kaelen's handoff phrases. "Shiny" / "shiny" is Kaelen's vocative
-	# for the pilot — Jenna doesn't use it. The pre-TTS verify script
-	# in TTSInterface would also catch it, but rejecting at the source
-	# keeps the on-screen text clean too.
-	var kaelen_tells: Array = ["best friend", "stay put", "sit tight", "wait here", "i'll fetch", "i'll grab", "hold on", "hold here", "stay here", "shiny"]
-	for tell in kaelen_tells:
-		if lower.contains(tell):
-			print("[TRACE] [UIManager] Mechanic line rejected: Kaelen voice-tell '", tell, "' found. line=\"", line, "\"")
-			return false
-	# Length sanity.
-	if line.length() < 25 or line.length() > 300:
-		print("[TRACE] [UIManager] Mechanic line rejected: length out of bounds. line=\"", line, "\"")
-		return false
-	return true
-
-# Direct Ollama HTTP call. Mirrors LLMInterface.request_kaelen_intro's
-# shape but stays self-contained so the mechanic feature doesn't depend
-# on Kaelen's prompt evolution.
-func _request_mechanic_intro_via_ollama(prompt: String, ship: String, worst_tier: String, best_tier: String, callback: Callable) -> void:
+# Recursive attempt handler for the mechanic intro. Evaluates the LLM's
+# response against _is_valid_mechanic_line. If it fails, appends the
+# rejection reason as a self-critique suffix and tries again (up to a limit).
+func _request_mechanic_intro_attempt(base_prompt: String, ship: String, worst_tier: String, best_tier: String, offer: Dictionary, callback: Callable, critique_suffix: String, attempt: int) -> void:
+	if attempt >= 2:
+		print("[TRACE] [UIManager] Mechanic LLM failed all attempts. Falling back.")
+		callback.call(_pick_fallback_mechanic_greeting(ship, worst_tier, best_tier, offer), true)
+		return
+		
 	var url: String = LLMInterface.OLLAMA_URL
 	var model: String = LLMInterface.active_model_name if LLMInterface.active_model_name != "" else "qwen2.5:1.5b"
+	var prompt_to_send: String = base_prompt
+	if critique_suffix != "":
+		prompt_to_send += "\n\n" + critique_suffix
+		
 	var body: Dictionary = {
 		"model": model,
-		"prompt": prompt,
+		"prompt": prompt_to_send,
 		"stream": false,
 		"format": "json",
-		"options": { "temperature": 0.85, "num_predict": 180 },
+		"options": { "temperature": 0.85, "num_predict": 250 },
 	}
 	var headers: PackedStringArray = ["Content-Type: application/json"]
 	var http := HTTPRequest.new()
 	add_child(http)
-	http.timeout = 8.0  # tight — we'd rather fall back than stall the dock UI
+	http.timeout = 8.0
 	http.request_completed.connect(func(result: int, code: int, _h: PackedStringArray, body_bytes: PackedByteArray) -> void:
 		http.queue_free()
 		if result != HTTPRequest.RESULT_SUCCESS or code != 200:
-			print("[TRACE] [UIManager] Mechanic LLM call failed (result=", result, " code=", code, "). Falling back.")
-			callback.call(_pick_fallback_mechanic_greeting(PLAYER_SHIP_NAME, _worst_reputation_tier(), _best_reputation_tier()), true)
+			var fb = _pick_fallback_mechanic_greeting(ship, worst_tier, best_tier, offer)
+			callback.call(fb, true)
 			return
+			
 		var raw: String = body_bytes.get_string_from_utf8()
 		var parsed = JSON.parse_string(raw)
 		if parsed is Dictionary and parsed.has("response"):
@@ -2008,65 +2124,125 @@ func _request_mechanic_intro_via_ollama(prompt: String, ship: String, worst_tier
 			var inner = JSON.parse_string(inner_str)
 			if inner is Dictionary and inner.has("line"):
 				var line: String = str(inner["line"]).strip_edges()
-				if line != "" and _is_valid_mechanic_line(line, ship, worst_tier, best_tier):
-					print("[TRACE] [UIManager] Mechanic LLM line accepted: \"", line.left(80), "...\"")
-					callback.call(line, false)
-					return
-		# Anything else: fall back.
-		print("[TRACE] [UIManager] Mechanic LLM returned invalid/unparseable line. Falling back to canned.")
-		callback.call(_pick_fallback_mechanic_greeting(PLAYER_SHIP_NAME, _worst_reputation_tier(), _best_reputation_tier()), true)
+				if line != "":
+					var is_valid: bool = _is_valid_mechanic_line(line, ship, worst_tier, best_tier, offer)
+					if is_valid:
+						print("[TRACE] [UIManager] Mechanic LLM line accepted on attempt ", attempt, ": \"", line.left(80), "...\"")
+						callback.call(line, false)
+						return
+					else:
+						var reason: String = _explain_mechanic_line_rejection(line, ship, worst_tier, best_tier, offer)
+						print("[TRACE] [UIManager] Mechanic LLM line REJECTED on attempt ", attempt, ": ", reason, " (", line, ")")
+						var new_suffix: String = "SELF-CRITIQUE — your previous attempt was rejected. Reason: " + reason
+						_request_mechanic_intro_attempt(base_prompt, ship, worst_tier, best_tier, offer, callback, new_suffix, attempt + 1)
+						return
+		
+		# Fallback on parse error
+		var fb = _pick_fallback_mechanic_greeting(ship, worst_tier, best_tier, offer)
+		callback.call(fb, true)
 	)
 	http.request(url, headers, HTTPClient.METHOD_POST, JSON.stringify(body))
 
-# Pick a canned line. Tries to weight toward rep-aware lines so a returning
-# player doesn't see the same opening every visit, but the LLM fallback
-# path is the real variety engine. Index is hashed from current state so
-# consecutive docks at the same reputation get a different line each time.
-func _pick_fallback_mechanic_greeting(ship: String, worst_tier: String, best_tier: String) -> String:
-	# Deterministic-by-state + a small random salt so undock/redock at the
-	# same rep snapshot doesn't always pick the same line. The LLM is the
-	# real variety engine — this is the offline fallback.
-	var salt: int = randi() % FALLBACK_MECHANIC_GREETINGS.size()
-	var idx: int = (worst_tier.length() + best_tier.length() + salt) % FALLBACK_MECHANIC_GREETINGS.size()
-	# Substitute the ship name placeholder in case we templatize later.
+# Validation rules for Jenna's generated line.
+func _is_valid_mechanic_line(line: String, ship: String, worst_tier: String, best_tier: String, offer: Dictionary) -> bool:
+	return _explain_mechanic_line_rejection(line, ship, worst_tier, best_tier, offer) == ""
+
+# Returns the reason why a mechanic line failed validation, or "" if it passes.
+func _explain_mechanic_line_rejection(line: String, ship: String, worst_tier: String, best_tier: String, offer: Dictionary) -> String:
+	var lower: String = line.to_lower()
+	var ship_l: String = ship.to_lower()
+	var ship_short: String = ship_l.split(" ")[0]
+	if not (lower.contains(ship_l) or lower.contains(ship_short) or lower.contains("that crate") or lower.contains("your crate") or lower.contains("your ship") or lower.contains("your rig")):
+		return "Failed to mention the ship name or refer to the ship."
+	
+	if offer.get("offer", false):
+		var target_npc: String = offer.get("npc_name", "").to_lower()
+		var target_outpost: String = offer.get("outpost_display", "").to_lower()
+		var part_name: String = offer.get("part_name", "").to_lower()
+		
+		# Allow partial matches for part names since LLM might truncate them
+		var part_words = part_name.split(" ")
+		var has_part = false
+		for w in part_words:
+			if w.length() > 3 and lower.contains(w):
+				has_part = true
+				break
+		if not has_part and not lower.contains(part_name):
+			return "Failed to mention the required part ('" + part_name + "')."
+			
+		var npc_words = target_npc.split(" ")
+		if not lower.contains(target_npc) and not lower.contains(npc_words[0]):
+			return "Failed to mention the contact ('" + target_npc + "')."
+	else:
+		var rep_words: Array = ["reputation", "rep sheet", "rep", "watchlist", "hostile", "trusted", "allied", "friendly", "cordial", "enemy", "scorch", "wanted", "marked", "neutral"]
+		var has_rep: bool = false
+		for w in rep_words:
+			if lower.contains(w):
+				has_rep = true
+				break
+		var has_credits: bool = lower.contains("credit") or lower.contains("sc") or lower.contains("wallet") or lower.contains("broke") or lower.contains("rich")
+		if not has_rep:
+			if worst_tier != "neutral" and lower.contains(worst_tier):
+				has_rep = true
+			elif best_tier != "neutral" and lower.contains(best_tier):
+				has_rep = true
+		if not (has_rep or has_credits):
+			return "Failed to reference reputation tier or credit count."
+			
+	var kaelen_tells: Array = ["best friend", "stay put", "sit tight", "wait here", "i'll fetch", "i'll grab", "hold on", "hold here", "stay here", "shiny"]
+	for tell in kaelen_tells:
+		if lower.contains(tell):
+			return "Contains forbidden Kaelen phrase: '" + tell + "'."
+			
+	if line.length() < 25 or line.length() > 400:
+		return "Length out of bounds."
+		
+	return ""
+
+# Pick a canned line.
+func _pick_fallback_mechanic_greeting(ship: String, worst_tier: String, best_tier: String, offer: Dictionary) -> String:
+	var salt: int = randi() % 10
+	var idx: int = (worst_tier.length() + best_tier.length() + salt) % 10
 	var line: String = FALLBACK_MECHANIC_GREETINGS[idx]
+	if offer.get("offer", false):
+		# Indices 10-12 are the pickup offer fallbacks
+		idx = 10 + (salt % 3)
+		line = FALLBACK_MECHANIC_GREETINGS[idx]
+		line = line.replace("{part}", offer.get("part_name", "the part"))
+		line = line.replace("{npc}", offer.get("npc_name", "the contact"))
+		line = line.replace("{outpost}", offer.get("outpost_display", "the outpost"))
 	return line.replace("{ship}", ship)
 
-# Render the mechanic intro panel. Pulls from the cache if available, else
-# picks a fallback immediately (no waiting). Call this every time the
-# maintenance submenu is rendered so the text is always in sync. Auto-plays
-# the line via TTS in Jenna's voice the FIRST time a new line shows —
-# subsequent submenu toggles with the same line don't re-play.
 func _render_mechanic_intro() -> void:
 	if not mechanic_intro_panel or not is_instance_valid(mechanic_intro_panel):
 		return
-	# Portrait: Jenna Kross lives at the bottom-right cell of MinorNPC02.png
-	# (see GlobalState.MINOR_NPCS). Sliced via get_minor_npc_portrait so
-	# the same atlas path is reused by gossip / pickup flows.
 	var portrait_tex: Texture2D = GlobalState.get_minor_npc_portrait("Jenna Kross")
 	if portrait_tex:
 		mechanic_portrait.texture = portrait_tex
-	# Resolve the line.
+		
 	var line: String = _cached_mechanic_line
 	var line_changed: bool = false
 	if line.strip_edges() == "":
-		# No cache yet (LLM still in flight). Pick a fallback so the
-		# chat box is never empty.
-		line = _pick_fallback_mechanic_greeting(PLAYER_SHIP_NAME, _worst_reputation_tier(), _best_reputation_tier())
+		line = _pick_fallback_mechanic_greeting(PLAYER_SHIP_NAME, _worst_reputation_tier(), _best_reputation_tier(), _mechanic_pickup_offer)
 		_cached_mechanic_line = line
 		_cached_mechanic_line_is_fallback = true
+		
 	if line != _last_played_mechanic_line:
 		line_changed = true
 		_last_played_mechanic_line = line
+		
 	mechanic_line_label.text = line
 	mechanic_intro_panel.visible = true
-	# Auto-play the line in Jenna's voice the first time we see it this
-	# dock. Suppressed on submenu re-entry (same line) so toggling
-	# between Services and Maintenance doesn't make her talk twice.
-	# The TTS path runs the line through the tone guard automatically
-	# (Jenna != Kaelen), so any LLM slip like "Shiny" gets rewritten to
-	# "Indy" before it hits the audio. We mirror the rewrite onto the
-	# on-screen label so the player sees the same text they hear.
+	
+	# Show/hide accept/decline buttons if an offer is active
+	var show_offer_btns = false
+	if _mechanic_pickup_offer.get("offer", false) and not _mechanic_pickup_declined and not QuestManager.is_quest_active():
+		show_offer_btns = true
+	if mechanic_pickup_accept_btn and is_instance_valid(mechanic_pickup_accept_btn):
+		mechanic_pickup_accept_btn.visible = show_offer_btns
+	if mechanic_pickup_decline_btn and is_instance_valid(mechanic_pickup_decline_btn):
+		mechanic_pickup_decline_btn.visible = show_offer_btns
+		
 	if line_changed:
 		var display_line: String = GlobalState.apply_tone_guard(line, "af_aoede")
 		if display_line != line:
@@ -2164,6 +2340,18 @@ func _on_test_deliver_pressed() -> void:
 	var part_name: String = QuestManager.active_quest.get("part_name", "(unknown)")
 	QuestManager.complete_quest()
 	show_hud_warning("Delivered '%s' to Grease Monkeys. +%d SC." % [part_name, TEST_PICKUP_REWARD])
+
+func _on_deliver_part_pressed() -> void:
+	if not QuestManager.is_quest_active() or not QuestManager.is_quest_completed():
+		return
+	var part_name: String = QuestManager.active_quest.get("part_name", "(unknown)")
+	var reward: int = QuestManager.active_quest.get("reward_credits", 0)
+	QuestManager.complete_quest()
+	
+	var msg = "You dropped off the %s. Jenna tossed you %d SC." % [part_name, reward]
+	var portrait_tex: Texture2D = GlobalState.get_minor_npc_portrait("Jenna Kross")
+	show_dock_message(msg, "Jenna Kross", Color(1.0, 0.85, 0.4), portrait_tex)
+	_render_dock_submenu()
 
 
 # Outpost-side pickup button. Validates the active quest, the current
@@ -2285,6 +2473,21 @@ func undock_player():
 	_mechanic_precache_in_flight = false
 	_mechanic_request_id += 1  # Invalidate any in-flight LLM callback
 	_last_played_mechanic_line = ""
+
+	# Clear the pickup offer state so the next dock re-rolls. Hides the
+	# accept/decline buttons if they were visible from this visit.
+	_mechanic_pickup_offer = {}
+	_mechanic_pickup_declined = false
+	if mechanic_pickup_accept_btn and is_instance_valid(mechanic_pickup_accept_btn):
+		mechanic_pickup_accept_btn.visible = false
+	if mechanic_pickup_decline_btn and is_instance_valid(mechanic_pickup_decline_btn):
+		mechanic_pickup_decline_btn.visible = false
+	# Hide the ore-trade confirm popup in case it was visible.
+	if ore_trade_popup and is_instance_valid(ore_trade_popup):
+		ore_trade_popup.visible = false
+	# Hide the live "Ask for the part" button in case it was visible.
+	if ask_for_part_btn and is_instance_valid(ask_for_part_btn):
+		ask_for_part_btn.visible = false
 	
 	# Stop voice dialogue audio if playing
 	TTSInterface.play_dialogue_audio("")
@@ -3466,6 +3669,221 @@ func add_chat_message(sender: String, message: String, sender_color: Color):
 	await get_tree().process_frame
 	if chat_scroll:
 		chat_scroll.scroll_vertical = int(chat_vbox.size.y)
+
+# ── Mechanic Pickup Button Handlers ──────────────────────────────────────────
+
+func _on_mechanic_pickup_accept_pressed() -> void:
+	if not _mechanic_pickup_offer.get("offer", false):
+		return
+	var part_name = _mechanic_pickup_offer["part_name"]
+	var npc_name = _mechanic_pickup_offer["npc_name"]
+	var outpost_id = _mechanic_pickup_offer["outpost_id"]
+	var outpost_display = _mechanic_pickup_offer["outpost_display"]
+	var reward = _mechanic_pickup_offer["reward_credits"]
+	
+	var quest_data: Dictionary = {
+		"title": "Parts Run: %s" % part_name,
+		"faction": "neutral",
+		"agent_name": "Jenna Kross",
+		"dialogue": "Head to %s and pick up the %s from %s. Bring it back here." % [outpost_display, part_name, npc_name],
+		"objective": {
+			"type": "PICKUP_SPECIAL",
+			"target_outpost": outpost_id,
+			"target_outpost_display": outpost_display,
+			"target_npc": npc_name,
+			"part_name": part_name,
+			"destination": "Grease Monkeys",
+			"reward_credits": reward,
+		},
+	}
+	var selected_choice: Dictionary = {
+		"text": "I'll take it.",
+		"consequence": {},
+	}
+	QuestManager.accept_quest(quest_data, selected_choice)
+	
+	_mechanic_pickup_declined = false
+	if mechanic_pickup_accept_btn and is_instance_valid(mechanic_pickup_accept_btn):
+		mechanic_pickup_accept_btn.visible = false
+	if mechanic_pickup_decline_btn and is_instance_valid(mechanic_pickup_decline_btn):
+		mechanic_pickup_decline_btn.visible = false
+		
+	# Kick off the LLM call to generate the outpost contact's handoff line.
+	# The line is cached on the quest dict via QuestManager.set_pickup_handoff.
+	_request_outpost_pickup_handoff_attempt(npc_name, part_name, outpost_display, "", 0)
+
+func _on_mechanic_pickup_decline_pressed() -> void:
+	_mechanic_pickup_declined = true
+	if mechanic_pickup_accept_btn and is_instance_valid(mechanic_pickup_accept_btn):
+		mechanic_pickup_accept_btn.visible = false
+	if mechanic_pickup_decline_btn and is_instance_valid(mechanic_pickup_decline_btn):
+		mechanic_pickup_decline_btn.visible = false
+
+# ── Outpost Pickup Button Handlers ───────────────────────────────────────────
+
+func _on_ask_for_part_pressed() -> void:
+	if not QuestManager.is_quest_active() or QuestManager.active_quest.get("objective_type", "") != "PICKUP_SPECIAL":
+		return
+	if GlobalState.cargo_type == GlobalState.CargoType.ORE and GlobalState.cargo > 0.0:
+		_show_ore_trade_popup()
+	else:
+		_complete_pickup_with_handoff()
+
+func _show_ore_trade_popup() -> void:
+	if not ore_trade_popup or not is_instance_valid(ore_trade_popup):
+		return
+	var ore_amount: int = int(GlobalState.cargo)
+	var rate: float = GlobalState.buyback_price_per_m3()
+	var payout: int = int(round(GlobalState.cargo * rate))
+	var picked_part: String = str(QuestManager.active_quest.get("part_name", "the part"))
+	var picked_npc: String = str(QuestManager.active_quest.get("target_npc", "the contact"))
+	ore_trade_label.text = "Your hold's full of %d m³ of ore. %s will buy it at %s SC/m³ = %d SC to clear the bay for the part. Take the deal?" % [ore_amount, picked_npc, _format_rate(rate), payout]
+	ore_trade_popup.visible = true
+
+func _format_rate(rate: float) -> String:
+	if fposmod(rate, 1.0) == 0.0:
+		return str(int(rate))
+	return "%.1f" % rate
+
+func _on_ore_trade_accept_pressed() -> void:
+	if ore_trade_popup and is_instance_valid(ore_trade_popup):
+		ore_trade_popup.visible = false
+	if GlobalState.cargo_type != GlobalState.CargoType.ORE or GlobalState.cargo <= 0.0:
+		show_dock_message("Hold's empty now. Go ahead and ask for the part.", "", Color(0.85, 0.85, 0.85))
+		return
+	var ore_amount: int = int(GlobalState.cargo)
+	var rate: float = GlobalState.buyback_price_per_m3()
+	var paid: int = GlobalState.buyback_ore_at_outpost()
+	if paid <= 0:
+		push_warning("[UIManager] _on_ore_trade_accept_pressed: buyback returned 0")
+		return
+	AudioManager.play_sell_ore()
+	show_dock_message("Sold %d m³ of ore at %s SC/m³ = %d SC. Hold cleared." % [ore_amount, _format_rate(rate), paid], "", Color(0.7, 1.0, 0.5))
+	_complete_pickup_with_handoff()
+
+func _on_ore_trade_decline_pressed() -> void:
+	if ore_trade_popup and is_instance_valid(ore_trade_popup):
+		ore_trade_popup.visible = false
+	show_dock_message("Kept the ore. Come back when the hold's clear.", "", Color(0.85, 0.85, 0.85))
+
+func _complete_pickup_with_handoff() -> void:
+	if not QuestManager.is_quest_active():
+		return
+	var picked_part: String = str(QuestManager.active_quest.get("part_name", "the part"))
+	var picked_npc: String = str(QuestManager.active_quest.get("target_npc", "the contact"))
+	
+	# Play the handoff line if available
+	var line = QuestManager.active_quest.get("pickup_handoff_line", "")
+	var voice = QuestManager.active_quest.get("pickup_handoff_voice_id", "")
+	if line != "":
+		TTSInterface.play_dialogue_audio(line, voice)
+	
+	var npc_color: Color = Color(0.85, 0.85, 0.85)
+	var npc_portrait: Texture2D = null
+	if GlobalState.MINOR_NPCS.has(picked_npc):
+		npc_color = GlobalState.MINOR_NPCS[picked_npc].get("flavor_color", npc_color)
+		npc_portrait = GlobalState.get_minor_npc_portrait(picked_npc)
+		
+	var success: bool = QuestManager.mark_pickup_complete()
+	if success:
+		var display_line = line if line != "" else "Picked up '%s' from %s. Deliver to Grease Monkeys." % [picked_part, picked_npc]
+		show_dock_message(display_line, picked_npc, npc_color, npc_portrait)
+		_render_dock_submenu()
+	else:
+		push_warning("[UIManager] _complete_pickup_with_handoff: mark_pickup_complete returned false")
+
+# ── Outpost Handoff LLM Logic ───────────────────────────────────────────────
+
+func _request_outpost_pickup_handoff_attempt(npc_name: String, part_name: String, outpost_display: String, critique_suffix: String, attempt: int) -> void:
+	if attempt >= 2:
+		_apply_pickup_handoff_fallback(npc_name, part_name)
+		return
+		
+	var base_prompt: String = (
+		"You are " + npc_name + ", working at " + outpost_display + ". "
+		+ "The player has arrived to pick up a part for Jenna Kross (a mechanic). "
+		+ "Write a short line (1-2 sentences) handing over the part.\n\n"
+		+ "HARD REQUIREMENTS:\n"
+		+ "1. Mention the part name: \"" + part_name + "\"\n"
+		+ "2. Mention Jenna.\n"
+		+ "3. Output valid JSON: {\"line\": \"<your line>\"}"
+	)
+	var prompt_to_send: String = base_prompt
+	if critique_suffix != "":
+		prompt_to_send += "\n\n" + critique_suffix
+		
+	var url: String = LLMInterface.OLLAMA_URL
+	var model: String = LLMInterface.active_model_name if LLMInterface.active_model_name != "" else "qwen2.5:1.5b"
+	var body: Dictionary = {
+		"model": model,
+		"prompt": prompt_to_send,
+		"stream": false,
+		"format": "json",
+		"options": { "temperature": 0.85, "num_predict": 150 },
+	}
+	var headers: PackedStringArray = ["Content-Type: application/json"]
+	var http := HTTPRequest.new()
+	add_child(http)
+	http.timeout = 8.0
+	http.request_completed.connect(func(result: int, code: int, _h: PackedStringArray, body_bytes: PackedByteArray) -> void:
+		http.queue_free()
+		if result != HTTPRequest.RESULT_SUCCESS or code != 200:
+			_apply_pickup_handoff_fallback(npc_name, part_name)
+			return
+			
+		var raw: String = body_bytes.get_string_from_utf8()
+		var parsed = JSON.parse_string(raw)
+		if parsed is Dictionary and parsed.has("response"):
+			var inner_str: String = str(parsed["response"])
+			var inner = JSON.parse_string(inner_str)
+			if inner is Dictionary and inner.has("line"):
+				var line: String = str(inner["line"]).strip_edges()
+				if line != "":
+					var is_valid: bool = _is_valid_outpost_handoff_line(line, part_name)
+					if is_valid:
+						var voice_id: String = "neutral"
+						var voice_speed: float = 1.0
+						if GlobalState.MINOR_NPCS.has(npc_name):
+							voice_id = GlobalState.MINOR_NPCS[npc_name].get("voice_id", voice_id)
+							voice_speed = GlobalState.MINOR_NPCS[npc_name].get("voice_speed", voice_speed)
+						QuestManager.set_pickup_handoff(line, voice_id, voice_speed, false, npc_name)
+						TTSInterface.cache_dialogue_audio(line, voice_id, voice_speed)
+						return
+					else:
+						var reason: String = _explain_outpost_handoff_rejection(line, part_name)
+						var new_suffix: String = "SELF-CRITIQUE — your previous attempt was rejected. Reason: " + reason
+						_request_outpost_pickup_handoff_attempt(npc_name, part_name, outpost_display, new_suffix, attempt + 1)
+						return
+		_apply_pickup_handoff_fallback(npc_name, part_name)
+	)
+	http.request(url, headers, HTTPClient.METHOD_POST, JSON.stringify(body))
+
+func _is_valid_outpost_handoff_line(line: String, part_name: String) -> bool:
+	return _explain_outpost_handoff_rejection(line, part_name) == ""
+
+func _explain_outpost_handoff_rejection(line: String, part_name: String) -> String:
+	var lower: String = line.to_lower()
+	if not lower.contains("jenna"):
+		return "Failed to mention Jenna."
+	
+	var part_words = part_name.to_lower().split(" ")
+	var has_part = false
+	for w in part_words:
+		if w.length() > 3 and lower.contains(w):
+			has_part = true
+			break
+	if not has_part and not lower.contains(part_name.to_lower()):
+		return "Failed to mention the required part."
+	return ""
+
+func _apply_pickup_handoff_fallback(npc_name: String, part_name: String) -> void:
+	var line: String = "Jenna sent you? Alright, here's the %s. Tell her we're even." % part_name
+	var voice_id: String = "neutral"
+	var voice_speed: float = 1.0
+	if GlobalState.MINOR_NPCS.has(npc_name):
+		voice_id = GlobalState.MINOR_NPCS[npc_name].get("voice_id", voice_id)
+		voice_speed = GlobalState.MINOR_NPCS[npc_name].get("voice_speed", voice_speed)
+	QuestManager.set_pickup_handoff(line, voice_id, voice_speed, true, npc_name)
 
 func _create_loading_screen():
 	loading_panel = Panel.new()

@@ -85,41 +85,89 @@ const MINOR_NPCS = {
 		"Kova's got no rules, Shiny. Just people with guns and people without.",
 		"Vanguard patrols hit Sector 7 hard last week. Someone's paying them to.",
 		"Aurelia tried to recruit me once. I declined. Politely. With a knife.",
+	], "pickup_handoff_fallback_lines": [
+		"Got your part. Try not to break it before you bring it back.",
+		"There. The mechanic's paying through Kova, I expect the same courtesy. Don't scratch it.",
+		"Part's yours. Anything happens to it on the way back, that's between you and your insurance.",
+		"Hand-off clean. Don't tell me where you're taking it, don't tell me why, and we're square.",
+		"There you go. The mechanic's credit cleared this morning, so I expect you to do the same.",
 	] },
 	"Mariska Vonn":  { "image": "res://assets/MinorNPC01.png", "position": "top_right",    "vibe": "young blonde corporate fixer, white-and-gold outfit", "outpost": "iron_reach", "voice_id": "af_nicole", "voice_speed": 1.05, "flavor_color": Color(0.55, 0.85, 1.0), "flavor_lines": [
 		"Zenith's been running the numbers on you, Shiny. Try not to disappoint the spreadsheet.",
 		"Iron Reach's market is... complicated. Keep your credits close and your questions closer.",
 		"Aurelia's been sniffing our freight lanes again. Don't ask what they're moving.",
+	], "pickup_handoff_fallback_lines": [
+		"There's the part. Receipts on delivery, no exceptions. Tell Jenna I said hi.",
+		"All yours, Indy. Don't make me file a claim when it shows up scratched.",
+		"Part's in your bay. Contract's signed, courier's gone, my liability ends here.",
+		"There. Iron Reach is nothing if not punctual. Try to return the favor.",
+		"Invoice, manifest, release code. All yours. Next time, route the requisition through procurement.",
 	] },
 	"Korvin Shaw":   { "image": "res://assets/MinorNPC01.png", "position": "bottom_left",  "vibe": "military veteran, mohawk and full plate armor", "outpost": "kova",       "voice_id": "am_michael", "voice_speed": 0.95, "flavor_color": Color(0.9, 0.85, 0.5), "flavor_lines": [
 		"Vanguard trained me to follow orders. Kova taught me which orders to break.",
 		"The frontier doesn't need heroes. It needs survivors.",
 		"Zenith, Aurelia, Vanguard — pick your side, Shiny. Or pick none and die quietly.",
+	], "pickup_handoff_fallback_lines": [
+		"Hand-off in three, two — there. Don't drop it, don't lose it, don't ask where I got it.",
+		"Part's in your bay. Combat pilot to combat mechanic. Try not to die on the way back.",
+		"All accounted for. Whatever you do with it from here is your war, not mine.",
+		"There. Now move — Kova's not a safe place to loiter, and you're not a safe person to loiter near.",
+		"Part's loaded. Clean transfer, no witnesses. We were never here.",
 	] },
 	"Hana Quill":    { "image": "res://assets/MinorNPC01.png", "position": "bottom_right", "vibe": "tech analyst, glasses and dark teal jacket", "outpost": "iron_reach", "voice_id": "af_kore",   "voice_speed": 1.0,  "flavor_color": Color(0.5, 0.95, 0.9), "flavor_lines": [
 		"Vanguard's nav buoys are drifting. Either sloppy or probing. Neither's comforting.",
 		"Aurelia's encrypted traffic spiked 40% last cycle. Something's moving.",
 		"Need a firmware update? I can help. Need a favor? That costs more.",
+	], "pickup_handoff_fallback_lines": [
+		"That's the firmware module. Fresh off the courier. Don't let it near magnetic fields.",
+		"All calibrated and signed off. Try not to brick it before Jenna sees it.",
+		"Part's clean, signed, and serialized. If you ask me where it came from, I'll have to lie.",
+		"There. Diagnostic pass complete, zero defects. Don't make me a liar.",
+		"Loaded. Telemetry's good. Now please don't crash it — I'm tired of writing incident reports.",
 	] },
 	"Oleg Stroud":   { "image": "res://assets/MinorNPC02.png", "position": "top_left",     "vibe": "syndicate accountant, bald with a monocle", "outpost": "iron_reach", "voice_id": "am_fenrir", "voice_speed": 0.88, "flavor_color": Color(0.6, 1.0, 0.6), "flavor_lines": [
 		"Books don't lie, Shiny. The credits tell the whole story.",
 		"I keep the ledgers for half the brokers in this sector. Don't ask which half.",
 		"You want a receipt? That'll be extra. Aurelia taught me that.",
+	], "pickup_handoff_fallback_lines": [
+		"Invoice cleared, part released to your bay. Jenna's paying the freight; you're paying me in goodwill.",
+		"Here. I've logged the serial. When it breaks, it breaks on your ledger, not mine.",
+		"Release code's in your inbox. Auditable, traceable, and exactly as boring as you want it.",
+		"There. Debit cleared, credit posted, part released. Try not to make me explain this to an auditor.",
+		"All accounted for. The books balance, the part's yours, and we both pretend this never happened.",
 	] },
 	"Dasha Invar":   { "image": "res://assets/MinorNPC02.png", "position": "top_right",    "vibe": "edgy mercenary, undercut and blue leather", "outpost": "kova",       "voice_id": "af_nova",   "voice_speed": 1.08, "flavor_color": Color(1.0, 0.55, 0.7), "flavor_lines": [
 		"Don't stare, Shiny. The tattoos have stories and none of them are short.",
 		"Kova's where the contracts go when everywhere else gets too hot.",
 		"You look like trouble. Good. Trouble pays well.",
+	], "pickup_handoff_fallback_lines": [
+		"Part's in your bay. Try not to get jumped on the way back — Kova's not safe for a shiny crate.",
+		"Took me all morning to find a clean one. Don't let the mechanic's people screw it up.",
+		"There. Don't ask where I sourced it, don't ask who I paid off, and don't you dare scratch it.",
+		"Hand-off done. The tattoos have more history than this part, and I trust both about the same.",
+		"All yours, sharp edges and all. Try not to bleed on the upholstery.",
 	] },
 	"Alaric Venn":   { "image": "res://assets/MinorNPC02.png", "position": "bottom_left",  "vibe": "corporate strategist, slicked hair and goatee", "outpost": "iron_reach", "voice_id": "am_liam",   "voice_speed": 0.98, "flavor_color": Color(0.7, 0.75, 1.0), "flavor_lines": [
 		"Iron Reach runs clean. Mostly. Don't dig into the manifest logs.",
 		"Zenith and Vanguard keep circling each other. We take notes and bill both sides.",
 		"You ever wonder who really runs this sector? Follow the supply contracts.",
+	], "pickup_handoff_fallback_lines": [
+		"Part's logged, manifests signed, and the courier's gone. Iron Reach keeps its paperwork tidy.",
+		"There. Tell Jenna the next time, route the requisition through me. Less overhead.",
+		"Released to your account, line item 4471. The board's already amortized it across the quarter.",
+		"Loaded. The next time Iron Reach does this for you, the rate goes up. Precedent.",
+		"All yours. Try to keep it out of the news — corporate logistics gets enough bad press as it is.",
 	] },
 	"Jenna Kross":   { "image": "res://assets/MinorNPC02.png", "position": "bottom_right", "vibe": "mechanic with red hair, goggles, and tattoos", "role": "Grease Monkeys mechanic", "voice_id": "af_aoede", "voice_speed": 1.0, "flavor_color": Color(1.0, 0.85, 0.4), "flavor_lines": [
 		"If it flies, I can fix it. If it doesn't fly, I can make it fly. Hand me the part.",
 		"Your thruster's running hot. I can hear it from here. Pay me now or pay me later.",
 		"The INDY Miner — classic chassis. Easy to work on, hard to keep running.",
+	], "pickup_handoff_fallback_lines": [
+		# Jenna is the mechanic, not a pickup NPC — but if a quest ever
+		# routes to her (e.g. a return-trip handoff), she has lines.
+		"Hand me the part. I already know what's wrong with it.",
+		"Park it. I can hear the bearing whining from here.",
+		"Indy Miner? Of course. Hand it over, I'll work my magic.",
 	] },
 }
 
@@ -442,6 +490,114 @@ func clear_cargo() -> void:
 	cargo_special = {}
 	cargo_type = CargoType.EMPTY
 	cargo_changed.emit(cargo)
+
+
+# ── Mechanic pickup-quest offer ───────────────────────────────────────────────
+# When the player docks at Grease Monkeys, the mechanic's LLM intro has a
+# chance to roll into a pickup offer: she asks the player to fetch a part
+# from a named NPC at a named outpost. The roll happens once per dock and
+# locks for the rest of the visit so submenu swaps don't re-roll it.
+#
+# 0.5 = 50% for testing. Drop to 0.05 (or less) once the LLM is reliable
+# and the part flow is balanced. Lives on GlobalState so the LLM prompt
+# and the quest-build can read the same number.
+const MECHANIC_PICKUP_OFFER_CHANCE: float = 0.5
+
+# The two outposts the mechanic can send the player to. Matches the
+# OUTPOST_NODE_TO_ID keys in UIManager (the scene node names live there
+# in world labels; this is the lowercase id form the quest data uses).
+const PICKUP_OUTPOST_IDS: Array = ["iron_reach", "kova"]
+const PICKUP_OUTPOST_DISPLAY: Dictionary = {
+	"iron_reach": "Outpost Iron Reach",
+	"kova":      "Outpost Kova",
+}
+
+# Parts the mechanic might need. Keep variety high so LLM lines don't all
+# sound the same. The fallback lines mention the part by name so the
+# player knows what they're carrying.
+const PICKUP_PART_NAMES: Array = [
+	"Plasma Coupler Mk II",
+	"Hydraulic Sealant Cartridge",
+	"Firmware Module — Nav Compute v3.1",
+	"Quantum Drive Bypass Coil",
+	"Shield Capacitor Array",
+	"Sensor Calibration Kit",
+	"Antimatter Injector Valve",
+	"Thrust Vectoring Servo",
+]
+
+# What the mechanic pays on successful delivery. Single source of truth —
+# the live offer path AND the test buttons read this.
+const PICKUP_REWARD_CREDITS: int = 200
+
+# Returns a pickup-offer roll. The offer is a single (outpost, npc, part)
+# tuple shared by the LLM prompt and the quest-build so they can't drift.
+# Returns {offer: false} on the negative side of the chance roll. Caller
+# is responsible for the per-dock lock (this is a single call — not stateful).
+static func roll_pickup_offer() -> Dictionary:
+	if randf() > MECHANIC_PICKUP_OFFER_CHANCE:
+		return { "offer": false }
+	var outpost_id: String = PICKUP_OUTPOST_IDS[randi() % PICKUP_OUTPOST_IDS.size()]
+	var npcs: Array = get_minor_npcs_at_outpost(outpost_id)
+	if npcs.is_empty():
+		# Defensive: the outposts always have NPCs today, but if that
+		# ever changes we want a clean negative result, not a crash.
+		push_warning("[GlobalState] roll_pickup_offer: outpost '%s' has no NPCs." % outpost_id)
+		return { "offer": false }
+	var npc_name: String = npcs[randi() % npcs.size()]
+	var part_name: String = PICKUP_PART_NAMES[randi() % PICKUP_PART_NAMES.size()]
+	return {
+		"offer": true,
+		"outpost_id": outpost_id,
+		"outpost_display": PICKUP_OUTPOST_DISPLAY.get(outpost_id, outpost_id),
+		"npc_name": npc_name,
+		"part_name": part_name,
+		"reward_credits": PICKUP_REWARD_CREDITS,
+	}
+
+
+# ── Outpost ore buyback ───────────────────────────────────────────────────────
+# The cargo is mutually exclusive (ore XOR special). If the player has
+# ore in the hold when they try to pick up the part at the outpost, the
+# target NPC offers to buy the ore at a slight premium to free the bay.
+# This is the only place in the game ore sells for more than 1 SC/m³.
+
+# Buyback rate per m³, keyed on the player's BEST reputation tier across
+# all factions. Same brackets as the spec: 2.0 for wary/below, 2.5 for
+# neutral-friendly, 3.0 for trusted/allied. Reads `reputations` (a live
+# var, not const) so it reflects the player's current standing.
+func buyback_price_per_m3() -> float:
+	# Walk all faction reps, take the best tier label, map to price.
+	var best_label: String = "neutral"
+	var best_value: float = 0.0
+	for faction in reputations.keys():
+		var rep: float = float(reputations.get(faction, 0.0))
+		if rep > best_value:
+			best_value = rep
+			best_label = reputation_tier(rep)
+	match best_label:
+		"trusted", "allied":
+			return 3.0
+		"neutral", "cordial", "friendly":
+			return 2.5
+		_:
+			# sworn enemy, hostile, unfriendly, wary
+			return 2.0
+
+# Sell all ore currently in the hold at the buyback rate. Returns the
+# credits paid. Caller is responsible for showing the popup. Plays the
+# same sell-ore sfx as the main station for audio consistency.
+#
+# Returns 0 if the hold is empty or carrying a special item — by the
+# time this is called, the caller has already gated on cargo_type==ORE.
+func buyback_ore_at_outpost() -> int:
+	if cargo_type != CargoType.ORE or cargo <= 0.0:
+		return 0
+	var rate: float = buyback_price_per_m3()
+	var paid: int = int(round(cargo * rate))
+	player_credits += paid
+	clear_cargo()
+	return paid
 
 # Returns a short display string for the HUD: "EMPTY", "ORE: 15 / 30 m³",
 # or "SPECIAL: Replacement Plasma Coupler".
