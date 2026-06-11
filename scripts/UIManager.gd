@@ -3849,6 +3849,14 @@ func _complete_pickup_with_handoff() -> void:
 	else:
 		push_warning("[UIManager] _complete_pickup_with_handoff: mark_pickup_complete returned false")
 
+const FALLBACK_OUTPOST_HANDOFF: Array = [
+	"Tell Jenna she owes me for this {part}, but not like last time. I still can't get that stain out of my carpet. She knows what I mean.",
+	"Here's the {part}. Remind Jenna that her tab here is longer than a freighter, and this isn't a charity.",
+	"Take the {part}. And tell Jenna if she sends another one of her 'favorite couriers' smelling like engine grease, I'm charging double.",
+	"Got the {part} right here. You let Jenna know she's lucky I don't hold a grudge about the plasma scorch on my docking bay.",
+	"Handing over the {part}. Make sure Jenna knows this favors market is getting awfully one-sided.",
+]
+
 # ── Outpost Handoff LLM Logic ───────────────────────────────────────────────
 
 func _request_outpost_pickup_handoff_attempt(npc_name: String, part_name: String, outpost_display: String, critique_suffix: String, attempt: int) -> void:
@@ -3856,10 +3864,17 @@ func _request_outpost_pickup_handoff_attempt(npc_name: String, part_name: String
 		_apply_pickup_handoff_fallback(npc_name, part_name)
 		return
 		
+	var examples_block: String = ""
+	for i in range(3):
+		var ex: String = FALLBACK_OUTPOST_HANDOFF[i].replace("{part}", part_name)
+		examples_block += "- \"" + ex + "\"\n"
+		
 	var base_prompt: String = (
 		"You are " + npc_name + ", working at " + outpost_display + ". "
 		+ "The player has arrived to pick up a part for Jenna Kross (a mechanic). "
 		+ "Write a short line (1-2 sentences) handing over the part.\n\n"
+		+ "Here are some examples of the snarky, colorful tone you should use when talking about Jenna:\n"
+		+ examples_block + "\n"
 		+ "HARD REQUIREMENTS:\n"
 		+ "1. Mention the part name: \"" + part_name + "\"\n"
 		+ "2. Mention Jenna.\n"
@@ -3934,7 +3949,9 @@ func _explain_outpost_handoff_rejection(line: String, part_name: String) -> Stri
 	return ""
 
 func _apply_pickup_handoff_fallback(npc_name: String, part_name: String) -> void:
-	var line: String = "Jenna sent you? Alright, here's the %s. Tell her we're even." % part_name
+	var salt: int = randi() % FALLBACK_OUTPOST_HANDOFF.size()
+	var line: String = FALLBACK_OUTPOST_HANDOFF[salt].replace("{part}", part_name)
+	
 	var voice_id: String = "neutral"
 	var voice_speed: float = 1.0
 	if GlobalState.MINOR_NPCS.has(npc_name):
