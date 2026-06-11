@@ -34,6 +34,9 @@ When the player docks at the destination outpost to pick up the item:
 - Validate that the player is at the correct station (`docked_outpost_id == QuestManager.active_quest.get("target_outpost")`).
 - Trigger another LLM call for the outpost contact handing the item *to* the player. Provide the LLM with snarky few-shot examples (e.g., complaining about the quest-giver).
 - Once the line is generated (or falls back), call `QuestManager.set_pickup_handoff()` and `QuestManager.mark_pickup_complete()`.
+- **UI & Audio Routing:** To match the feel of the standard gossip system, use `show_dock_message()` to display the handoff text and portrait directly in the dock menu background. 
+  - *Gotcha:* Ensure you call `_render_dock_submenu()` **before** `show_dock_message()`. Rendering the submenu clears the dock message, so if called after, it will instantly wipe the portrait and text!
+  - Emit the text via `GlobalState.emit_npc_flavor(flavor_dict)`. This single call will simultaneously append the line to the persistent corner chat log and play the TTS audio. Do not call `TTSInterface.play_dialogue_audio` manually if you use this helper, otherwise the audio will double-play.
 - This sets `picked_up = true` in the `active_quest` dictionary, preventing the player from picking it up twice and altering the origin NPC's dialogue state.
 
 ## 5. The Delivery
