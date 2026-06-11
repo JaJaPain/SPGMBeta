@@ -3829,22 +3829,31 @@ func _complete_pickup_with_handoff() -> void:
 	var picked_part: String = str(QuestManager.active_quest.get("part_name", "the part"))
 	var picked_npc: String = str(QuestManager.active_quest.get("target_npc", "the contact"))
 	
-	# Play the handoff line if available
 	var line = QuestManager.active_quest.get("pickup_handoff_line", "")
-	var voice = QuestManager.active_quest.get("pickup_handoff_voice_id", "")
-	if line != "":
-		TTSInterface.play_dialogue_audio(line, voice)
 	
+	# Patch to override the old legacy fallback if it got cached before the update
+	var old_fallback: String = "Jenna sent you? Alright, here's the %s. Tell her we're even." % picked_part
+	if line == "" or line == old_fallback:
+		var salt: int = randi() % FALLBACK_OUTPOST_HANDOFF.size()
+		line = FALLBACK_OUTPOST_HANDOFF[salt].replace("{part}", picked_part)
+		
 	var npc_color: Color = Color(0.85, 0.85, 0.85)
 	var npc_portrait: Texture2D = null
 	if GlobalState.MINOR_NPCS.has(picked_npc):
 		npc_color = GlobalState.MINOR_NPCS[picked_npc].get("flavor_color", npc_color)
 		npc_portrait = GlobalState.get_minor_npc_portrait(picked_npc)
 		
+	if line != "":
+		# Play audio
+		var voice = QuestManager.active_quest.get("pickup_handoff_voice_id", "neutral")
+		if GlobalState.MINOR_NPCS.has(picked_npc):
+			voice = GlobalState.MINOR_NPCS[picked_npc].get("voice_id", voice)
+		TTSInterface.play_dialogue_audio(line, voice)
+		
 	var success: bool = QuestManager.mark_pickup_complete()
 	if success:
 		var display_line = line if line != "" else "Picked up '%s' from %s. Deliver to Grease Monkeys." % [picked_part, picked_npc]
-		show_dock_message(display_line, picked_npc, npc_color, npc_portrait)
+		show_npc_dialogue_popup(display_line, picked_npc, npc_color, npc_portrait)
 		_render_dock_submenu()
 	else:
 		push_warning("[UIManager] _complete_pickup_with_handoff: mark_pickup_complete returned false")
