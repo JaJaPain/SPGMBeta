@@ -28,6 +28,7 @@ LLMs hallucinate or ignore constraints. Implement a recursive retry loop (e.g., 
 Display "Accept" and "Decline" buttons. When the player accepts:
 - Construct the `quest_data` dictionary. Crucially, set the `"objective": { "type": "PICKUP_SPECIAL" }` and include all the target details.
 - Call `QuestManager.accept_quest(quest_data, selected_choice)`.
+- **Bug Fix / Best Practice:** Immediately clear the locally cached offer (e.g. `_mechanic_pickup_offer = {}`) when the player accepts. This prevents the UI from incorrectly displaying the original offer buttons again when the player returns and completes the quest, since `QuestManager.is_quest_active()` evaluates to false after completion.
 
 ## 4. The Outpost Handoff (The Pickup)
 When the player docks at the destination outpost to pick up the item:

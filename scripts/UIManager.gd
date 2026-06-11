@@ -80,8 +80,6 @@ var deliver_part_btn: Button
 const DEBUG_TESTS: bool = false
 
 var sell_btn: Button
-var upgrade_cargo_btn: Button
-var upgrade_laser_btn: Button
 var repair_btn: Button
 var agent_service_btn: Button
 var maintenance_bay_btn: Button
@@ -92,6 +90,10 @@ var su_cargo_btn: Button
 var su_engine_btn: Button
 var su_power_btn: Button
 var su_shields_btn: Button
+var su_mining_btn: Button
+var su_ship_sys_vbox: VBoxContainer
+var su_ship_sys_lbl: Label
+var su_ore_bank_lbl: Label
 var back_to_services_btn: Button
 var test_pickup_btn: Button
 var test_deliver_btn: Button
@@ -930,16 +932,7 @@ func _create_dock_menu():
 	sell_btn.pressed.connect(_sell_ore)
 	vbox.add_child(sell_btn)
 	
-	upgrade_cargo_btn = Button.new()
-	upgrade_cargo_btn.text = "Upgrade Cargo Hold (+25 m³) - 100 SC"
-	upgrade_cargo_btn.pressed.connect(_upgrade_cargo)
-	vbox.add_child(upgrade_cargo_btn)
-	
-	upgrade_laser_btn = Button.new()
-	upgrade_laser_btn.text = "Upgrade Mining Laser (+1 yield) - 150 SC"
-	upgrade_laser_btn.pressed.connect(_upgrade_laser)
-	vbox.add_child(upgrade_laser_btn)
-	
+
 	repair_btn = Button.new()
 	repair_btn.text = "Repair Ship"
 	repair_btn.pressed.connect(_repair_ship)
@@ -1838,8 +1831,6 @@ func _render_dock_submenu() -> void:
 		agent_service_btn.visible = false
 		maintenance_bay_btn.visible = false
 		ship_upgrades_btn.visible = true
-		upgrade_cargo_btn.visible = true
-		upgrade_laser_btn.visible = true
 		repair_btn.visible = true
 		test_pickup_btn.visible = DEBUG_TESTS
 		test_deliver_btn.visible = DEBUG_TESTS
@@ -1874,8 +1865,6 @@ func _render_dock_submenu() -> void:
 		agent_service_btn.visible = not is_outpost
 		maintenance_bay_btn.visible = not is_outpost
 		ship_upgrades_btn.visible = false
-		upgrade_cargo_btn.visible = false
-		upgrade_laser_btn.visible = false
 		repair_btn.visible = false
 		test_pickup_btn.visible = false
 		test_deliver_btn.visible = false
@@ -1911,10 +1900,6 @@ func _render_dock_submenu() -> void:
 		if mechanic_intro_panel and is_instance_valid(mechanic_intro_panel):
 			mechanic_intro_panel.visible = false
 
-	# Update button labels + repair state regardless of submenu — keeps
-	# the cost text fresh in case the player swaps submenus while in dock.
-	upgrade_cargo_btn.text = "Upgrade Cargo Hold (+25 m³) - 100 SC"
-	upgrade_laser_btn.text = "Upgrade Mining Laser (+1 yield) - 150 SC"
 	_update_repair_button()
 
 
@@ -2610,20 +2595,7 @@ func _sell_ore():
 		_update_repair_button()
 		AudioManager.play_sell_ore()
 
-func _upgrade_cargo():
-	if GlobalState.player_credits >= 100:
-		GlobalState.player_credits -= 100
-		GlobalState.cargo_max += 25.0
-		_on_cargo_changed(GlobalState.cargo) # Update HUD bar
-		upgrade_cargo_btn.text = "Upgrade Cargo Hold (+25 m³) - Purchased!"
-		_update_repair_button()
 
-func _upgrade_laser():
-	if GlobalState.player_credits >= 150:
-		GlobalState.player_credits -= 150
-		GlobalState.mining_yield += 1.0
-		upgrade_laser_btn.text = "Upgrade Mining Laser (+1 yield) - Purchased!"
-		_update_repair_button()
 
 func show_context_menu(entity: Node3D):
 	if not entity or not is_instance_valid(entity): return
@@ -4302,6 +4274,33 @@ func show_kaelen_intro():
 	TTSInterface.play_dialogue_audio(line, "neutral")
 	print("[UIManager] Kaelen intro shown: ", line.left(60), "...")
 
+func _style_action_button(btn: Button):
+	var sb = StyleBoxFlat.new()
+	sb.bg_color = Color(0.1, 0.1, 0.15, 0.9)
+	sb.border_width_left = 2
+	sb.border_width_top = 2
+	sb.border_width_right = 2
+	sb.border_width_bottom = 2
+	sb.border_color = Color(0.3, 0.6, 1.0, 0.8)
+	sb.corner_radius_top_left = 4
+	sb.corner_radius_top_right = 4
+	sb.corner_radius_bottom_right = 4
+	sb.corner_radius_bottom_left = 4
+	sb.content_margin_top = 8
+	sb.content_margin_bottom = 8
+	sb.content_margin_left = 12
+	sb.content_margin_right = 12
+	btn.add_theme_stylebox_override("normal", sb)
+	
+	var sb_hover = sb.duplicate()
+	sb_hover.bg_color = Color(0.2, 0.2, 0.3, 0.9)
+	sb_hover.border_color = Color(0.5, 0.8, 1.0, 1.0)
+	btn.add_theme_stylebox_override("hover", sb_hover)
+	
+	var sb_pressed = sb.duplicate()
+	sb_pressed.bg_color = Color(0.1, 0.3, 0.6, 0.9)
+	btn.add_theme_stylebox_override("pressed", sb_pressed)
+
 # ── Ship Upgrades UI ────────────────────────────────────────────────────────
 func _create_ship_upgrades_panel() -> void:
 	ship_upgrades_panel = Panel.new()
@@ -4376,17 +4375,27 @@ func _create_ship_upgrades_panel() -> void:
 	su_engine_btn = _create_slot.call("ENGINE\nNova Thrusters\n120 m/s", Vector2(420, 20), Vector2(220, 100), func(): _on_su_slot_pressed("engine"))
 	su_power_btn = _create_slot.call("POWERPLANT\nFusion Core\n500 MW", Vector2(-250, 240), Vector2(220, 100), func(): _on_su_slot_pressed("power"))
 	su_shields_btn = _create_slot.call("SHIELDS\nAegis Deflector\n1200 HP", Vector2(0, -220), Vector2(220, 100), func(): _on_su_slot_pressed("shields"))
+	su_mining_btn = _create_slot.call("MINING LASER\nIndustrial Beam\n1.0 Yield", Vector2(250, 240), Vector2(220, 100), func(): _on_su_slot_pressed("mining"))
 
-	# Bottom info panels
-	var bottom_hbox = HBoxContainer.new()
-	bottom_hbox.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
-	bottom_hbox.offset_top = -220
-	bottom_hbox.offset_bottom = -20
-	bottom_hbox.add_theme_constant_override("separation", 120)
-	bottom_hbox.alignment = BoxContainer.ALIGNMENT_CENTER
-	ship_upgrades_panel.add_child(bottom_hbox)
+	# Side panels
+	var left_panel = VBoxContainer.new()
+	left_panel.set_anchors_preset(Control.PRESET_LEFT_WIDE)
+	left_panel.offset_left = 60
+	left_panel.offset_right = 310
+	left_panel.offset_top = 100
+	left_panel.offset_bottom = -60
+	left_panel.add_theme_constant_override("separation", 60)
+	ship_upgrades_panel.add_child(left_panel)
 	
-	var _create_info_box = func(title: String, body: String):
+	var right_panel = VBoxContainer.new()
+	right_panel.set_anchors_preset(Control.PRESET_RIGHT_WIDE)
+	right_panel.offset_left = -310
+	right_panel.offset_right = -60
+	right_panel.offset_top = 100
+	right_panel.offset_bottom = -60
+	ship_upgrades_panel.add_child(right_panel)
+	
+	var _create_info_box = func(parent: Control, title: String, body: String):
 		var vbox = VBoxContainer.new()
 		vbox.custom_minimum_size = Vector2(250, 0)
 		var t_lbl = Label.new()
@@ -4397,25 +4406,111 @@ func _create_ship_upgrades_panel() -> void:
 		b_lbl.text = body
 		b_lbl.add_theme_color_override("font_color", Color(0.8, 0.8, 0.8))
 		vbox.add_child(b_lbl)
-		bottom_hbox.add_child(vbox)
+		parent.add_child(vbox)
 		return b_lbl
 		
-	var su_sys_status = _create_info_box.call("SYSTEM STATUS", "ENGINE\t\t\tOnline\nWEAPONS\t\tNominal\nCARGOHOLD\tSecure\nSHIELDS\t\t\tCharging\nPOWERPLANT\tStable")
-	var su_ship_sys = _create_info_box.call("SHIP SYSTEMS", "\n\nSelect a system to view details.\n")
-	var su_ship_overview = _create_info_box.call("SHIP OVERVIEW", "SPEED\t\t\t\t\t\t\t78 m/s\nMANEUVERABILITY\t\t62%\nSHIELD STRENGTH\t\t1,200 HP\nHULL INTEGRITY\t\t\t2,400 HP")
+	var su_sys_status = _create_info_box.call(left_panel, "SYSTEM STATUS", "")
+	su_sys_status.name = "SysStatusLabel"
+	
+	var storage_vbox = VBoxContainer.new()
+	storage_vbox.custom_minimum_size = Vector2(250, 0)
+	var st_lbl = Label.new()
+	st_lbl.text = "PLAYER STORAGE"
+	st_lbl.add_theme_color_override("font_color", Color(1.0, 0.6, 0.2))
+	storage_vbox.add_child(st_lbl)
+	su_ore_bank_lbl = Label.new()
+	storage_vbox.add_child(su_ore_bank_lbl)
+	var dep_btn = Button.new()
+	dep_btn.text = "Deposit Ore from Ship"
+	_style_action_button(dep_btn)
+	dep_btn.pressed.connect(func():
+		if GlobalState.deposit_ore(GlobalState.cargo):
+			_refresh_upgrade_ui()
+	)
+	storage_vbox.add_child(dep_btn)
+	left_panel.add_child(storage_vbox)
+
+	su_ship_sys_vbox = VBoxContainer.new()
+	su_ship_sys_vbox.custom_minimum_size = Vector2(250, 0)
+	var t_lbl2 = Label.new()
+	t_lbl2.text = "SHIP SYSTEMS"
+	t_lbl2.add_theme_color_override("font_color", Color(1.0, 0.6, 0.2))
+	su_ship_sys_vbox.add_child(t_lbl2)
+	su_ship_sys_lbl = Label.new()
+	su_ship_sys_lbl.text = "\n\nSelect a system to view details.\n"
+	su_ship_sys_lbl.add_theme_color_override("font_color", Color(0.8, 0.8, 0.8))
+	su_ship_sys_vbox.add_child(su_ship_sys_lbl)
+	right_panel.add_child(su_ship_sys_vbox)
 
 func _on_ship_upgrades_pressed() -> void:
 	dock_panel.visible = false
 	ship_upgrades_panel.visible = true
-	# Initialize stats based on current global state
-	su_cargo_btn.text = "CARGOHOLD\nStandard Bay\n%d / %d SCU" % [GlobalState.cargo, GlobalState.cargo_max]
+	_refresh_upgrade_ui()
+
+func _refresh_upgrade_ui():
+	su_cargo_btn.text = "CARGOHOLD\nTier %d\n%d / %d SCU" % [GlobalState.current_upgrades["cargo"]["tier"], GlobalState.cargo, GlobalState.cargo_max]
+	su_weapons_btn.text = "WEAPONS\nTier %d %s" % [GlobalState.current_upgrades["weapons"]["tier"], GlobalState.current_upgrades["weapons"]["path"].capitalize()]
+	su_engine_btn.text = "ENGINE\nTier %d %s" % [GlobalState.current_upgrades["engine"]["tier"], GlobalState.current_upgrades["engine"]["path"].capitalize()]
+	su_power_btn.text = "POWERPLANT\nTier %d\nCapacity: %d MW" % [GlobalState.current_upgrades["power"]["tier"], GlobalState.power_capacity]
+	su_shields_btn.text = "SHIELDS\nTier %d %s" % [GlobalState.current_upgrades["shields"]["tier"], GlobalState.current_upgrades["shields"]["path"].capitalize()]
+	su_mining_btn.text = "MINING LASER\nTier %d %s" % [GlobalState.current_upgrades["mining"]["tier"], GlobalState.current_upgrades["mining"]["path"].capitalize()]
+	
+	su_ore_bank_lbl.text = "Banked Ore: %.1f / %.1f\nCredits: %d\nPower Draw: %d / %d MW" % [GlobalState.player_storage_ore, GlobalState.player_storage_max, GlobalState.player_credits, GlobalState.get_current_power_draw(), GlobalState.power_capacity]
+	
+	# Try to find SysStatusLabel safely
+	var status_node = ship_upgrades_panel.find_child("SysStatusLabel", true, false)
+	if status_node and status_node is Label:
+		status_node.text = "POWER: %d / %d MW\nCARGO: %d / %d" % [GlobalState.get_current_power_draw(), GlobalState.power_capacity, GlobalState.cargo, GlobalState.cargo_max]
 
 func _on_su_slot_pressed(slot: String) -> void:
-	match slot:
-		"cargo":
-			_upgrade_cargo()
-			su_cargo_btn.text = "CARGOHOLD\nStandard Bay\n%d / %d SCU" % [GlobalState.cargo, GlobalState.cargo_max]
-		"weapons":
-			_upgrade_laser()
-		"shields", "engine", "power":
-			print("Slot clicked: ", slot)
+	var info = GlobalState.current_upgrades[slot]
+	var current_tier = info["tier"]
+	var current_path = info["path"]
+	var is_max = current_tier >= 5
+	
+	for child in su_ship_sys_vbox.get_children():
+		if child != su_ship_sys_vbox.get_child(0) and child != su_ship_sys_lbl:
+			child.queue_free()
+			
+	if current_tier == 1:
+		su_ship_sys_lbl.text = "%s - Tier 1 Base\n\nAvailable Upgrades:\n" % slot.to_upper()
+		for path in GlobalState.UPGRADE_TREE[slot]["branches"].keys():
+			var data = GlobalState.UPGRADE_TREE[slot]["branches"][path][2]
+			var btn = Button.new()
+			_style_action_button(btn)
+			var pwr = data.get("power", 0)
+			var cost_c = data["cost_cr"]
+			var cost_o = data["cost_ore"]
+			btn.text = "Install %s Mk II\nCost: %d CR, %d Ore\nDraw: %d MW" % [path.capitalize(), cost_c, cost_o, pwr]
+			btn.pressed.connect(func(): _attempt_upgrade(slot, path))
+			su_ship_sys_vbox.add_child(btn)
+	else:
+		su_ship_sys_lbl.text = "%s - Tier %d %s\n" % [slot.to_upper(), current_tier, current_path.capitalize()]
+		if is_max:
+			su_ship_sys_lbl.text += "\nMAXIMUM TIER REACHED."
+		else:
+			var next_tier = current_tier + 1
+			var data = GlobalState.UPGRADE_TREE[slot]["branches"][current_path][next_tier]
+			var btn = Button.new()
+			_style_action_button(btn)
+			var pwr = data.get("power", 0)
+			btn.text = "Upgrade to Mk %d\nCost: %d CR, %d Ore\nDraw: %d MW" % [next_tier, data["cost_cr"], data["cost_ore"], pwr]
+			btn.pressed.connect(func(): _attempt_upgrade(slot, current_path))
+			su_ship_sys_vbox.add_child(btn)
+			
+		var ref_btn = Button.new()
+		ref_btn.text = "Refund & Reset Path (50% Back)"
+		_style_action_button(ref_btn)
+		ref_btn.pressed.connect(func():
+			GlobalState.refund_upgrade(slot)
+			_on_su_slot_pressed(slot)
+			_refresh_upgrade_ui()
+		)
+		su_ship_sys_vbox.add_child(ref_btn)
+
+func _attempt_upgrade(slot: String, path: String):
+	if GlobalState.purchase_upgrade(slot, path):
+		_on_su_slot_pressed(slot)
+		_refresh_upgrade_ui()
+	else:
+		su_ship_sys_lbl.text += "\n[color=red]INSUFFICIENT FUNDS OR POWER[/color]"

@@ -8,6 +8,15 @@ var destroyed: bool = false
 var is_docked: bool = false
 @export var rotation_speed: float = 3.5
 
+var current_shield: float = 0.0
+var shield_regen_timer: float = 0.0
+var current_speed: float = 0.0
+
+# Drawback tracking variables
+var engine_stall_timer: float = 0.0
+var mining_cycles: int = 0
+var mining_continuous_timer: float = 0.0
+
 # Navigation variables
 var target_position: Variant = null # null or Vector3
 var is_aligning: bool = false:
@@ -43,6 +52,7 @@ var drone_rotations: Array[Vector3] = []
 func _ready():
 	GlobalState.player = self
 	mining_laser.visible = false
+	current_shield = GlobalState.shield_capacity
 	
 	# Decouple camera pivot transform from player's parent transform
 	camera_pivot.top_level = true
@@ -168,6 +178,23 @@ func _physics_process(delta: float):
 	if GlobalState.paused:
 		mining_laser.visible = false
 		return
+		
+	# Shield Regeneration
+	if shield_regen_timer > 0.0:
+		shield_regen_timer -= delta
+	elif current_shield < GlobalState.shield_capacity and GlobalState.shield_regen_rate > 0.0:
+		current_shield = min(current_shield + GlobalState.shield_regen_rate * delta, GlobalState.shield_capacity)
+		
+	if engine_stall_timer > 0.0:
+		engine_stall_timer -= delta
+		
+	if mining_laser.visible:
+		mining_continuous_timer += delta
+		if GlobalState.has_max_deep_mining and mining_continuous_timer > 10.0:
+			mining_continuous_timer = 0.0
+			take_damage(5.0, "self")
+	else:
+		mining_continuous_timer = max(0.0, mining_continuous_timer - delta)
 		
 	# Animate orbiting drones
 	for i in range(drones.size()):
@@ -377,7 +404,7 @@ func _physics_process(delta: float):
 					
 		steer_towards(final_steer_target, delta)
 		
-		var speed = max_speed * GlobalState.engine_speed_mult
+		var target_speed = max_speed * GlobalState.engine_speed_mult
 		
 		# Proportional speed controller to maintain safe distance from targets
 		if active_target and is_instance_valid(active_target):
@@ -394,23 +421,44 @@ func _physics_process(delta: float):
 					target_stop_dist = 110.0
 				elif active_target.is_in_group("asteroid") or active_target.is_in_group("ship"):
 					target_stop_dist = 60.0
-				speed = clamp((dist - target_stop_dist) * 4.0, -speed_limit, speed_limit)
+				target_speed = clamp((dist - target_stop_dist) * 4.0, -speed_limit, speed_limit)
 			elif nav_mode == "MINE" and active_target.is_in_group("asteroid"):
 				# Keep 35m from mined asteroids to prevent crashing
-				speed = clamp((dist - 35.0) * 3.0, -speed_limit, speed_limit)
+				target_speed = clamp((dist - 35.0) * 3.0, -speed_limit, speed_limit)
 			elif nav_mode == "ATTACK" and active_target.is_in_group("ship"):
 				# Keep 45m from attacked hostile NPC ships
-				speed = clamp((dist - 45.0) * 3.0, -speed_limit, speed_limit)
+				target_speed = clamp((dist - 45.0) * 3.0, -speed_limit, speed_limit)
+			
+		# Calculate acceleration taking cargo mass into account
+		var accel = 15.0 * GlobalState.acceleration_mult
+		if not GlobalState.ignore_cargo_mass and GlobalState.cargo_max > 0:
+			var cargo_ratio = GlobalState.cargo / GlobalState.cargo_max
+			# Full cargo reduces acceleration by up to 60%
+			accel *= (1.0 - (cargo_ratio * 0.6))
+			
+		if engine_stall_timer > 0.0:
+			target_speed = 0.0
+			accel = 15.0 # Decelerate quickly on stall
+			
+		current_speed = move_toward(current_speed, target_speed, accel * delta)
 			
 		var forward_dir = -global_transform.basis.z
-		velocity = forward_dir * speed
+		velocity = forward_dir * current_speed
 		move_and_slide()
 		
 		if global_position.distance_to(dest) < 2.0:
 			if nav_mode == "MANUAL":
 				target_position = null
 	else:
-		velocity = Vector3.ZERO
+		# Decelerate to stop
+		var accel = 15.0 * GlobalState.acceleration_mult
+		current_speed = move_toward(current_speed, 0.0, accel * delta)
+		if current_speed > 0.0:
+			var forward_dir = -global_transform.basis.z
+			velocity = forward_dir * current_speed
+			move_and_slide()
+		else:
+			velocity = Vector3.ZERO
 		
 	# Check alignment completion
 	if is_aligning:
@@ -448,8 +496,12 @@ func steer_towards(target_pos: Vector3, delta: float):
 			var diff_y = fposmod(target_rot.y - rotation.y + PI, TAU) - PI
 			var diff_x = fposmod(target_rot.x - rotation.x + PI, TAU) - PI
 			
-			rotation.y += diff_y * delta * rotation_speed
-			rotation.x += diff_x * delta * rotation_speed
+			var current_rot_speed = rotation_speed
+			if GlobalState.has_max_rapid_weapon and fire_cooldown > 0.0:
+				current_rot_speed *= 0.85
+			
+			rotation.y += diff_y * delta * current_rot_speed
+			rotation.x += diff_x * delta * current_rot_speed
 
 func perform_action(target_node: Node3D, delta: float):
 	if target_node.is_in_group("asteroid"):
@@ -479,26 +531,38 @@ func perform_action(target_node: Node3D, delta: float):
 		mining_laser.scale = Vector3(pulse, laser_len / 2.0, pulse)
 		
 		if fire_cooldown <= 0.0:
-			fire_cooldown = 0.5
+			fire_cooldown = GlobalState.mining_cooldown
+			if GlobalState.has_max_bulwark_shield:
+				fire_cooldown *= 1.05
+				
 			AudioManager.play_laser(global_position)
 			if target_node.has_method("mine"):
 				target_node.mine()
+				
+			if GlobalState.has_max_rapid_mining:
+				mining_cycles += 1
+				if mining_cycles >= 10:
+					GlobalState.remove_ore(1.0)
+					mining_cycles = 0
 	
 	elif target_node.has_method("take_damage") and target_node.get("faction") != "player":
 		mining_laser.visible = false
 		if fire_cooldown <= 0.0:
-			fire_cooldown = 0.75 # Balanced fire rate for mining ship
+			fire_cooldown = GlobalState.weapon_cooldown
 			AudioManager.play_laser(global_position)
 			spawn_projectile(target_node)
 	else:
 		mining_laser.visible = false
 
 func spawn_projectile(target_node: Node3D):
+	if GlobalState.has_max_heavy_weapon:
+		engine_stall_timer = max(engine_stall_timer, 0.1)
+		
 	var proj_scene = load("res://scenes/projectile.tscn")
 	if proj_scene:
 		var p = proj_scene.instantiate()
 		p.direction = -global_transform.basis.z
-		p.damage = GlobalState.damage
+		p.damage = GlobalState.weapon_damage
 		p.faction = "player"
 		p.color = Color.CYAN
 		get_parent().add_child(p)
@@ -587,7 +651,24 @@ func _create_drones():
 func take_damage(amount: float, attacker_faction: String = ""):
 	if is_docked: return
 	if health <= 0.0: return
-	health -= amount
+	
+	shield_regen_timer = GlobalState.shield_regen_delay
+	if GlobalState.has_max_speed_engine:
+		shield_regen_timer += 2.0
+	
+	if current_shield > 0.0:
+		if amount <= current_shield:
+			current_shield -= amount
+			amount = 0.0
+		else:
+			amount -= current_shield
+			current_shield = 0.0
+			if GlobalState.has_max_deflector_shield:
+				engine_stall_timer = max(engine_stall_timer, 1.0)
+			
+	if amount > 0.0:
+		health -= amount
+		
 	if health <= 0.0:
 		die()
 

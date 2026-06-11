@@ -10,46 +10,110 @@ extends Node
 # and disable buttons when maxed.
 const SHIP_BASE_STATS = {
 	"cargo_max_m3":       100.0,
-	"mining_laser_yield": 2.0,
+	"mining_laser_yield": 1.0,
+	"mining_cooldown":    1.0,
+	"weapon_damage":      20.0,
+	"weapon_cooldown":    0.75,
 	"shield_capacity":    0.0,
+	"shield_regen_delay": 60.0,
+	"shield_regen_rate":  0.0,
 	"engine_speed_mult":  1.0,
+	"acceleration_mult":  1.0,
+	"ignore_cargo_mass":  false,
 	"hull_armor":         0.0,
 	"max_health":         100.0,
 }
-const SHIP_MAX_STATS = {
-	"cargo_max_m3":       200.0,
-	"mining_laser_yield": 5.0,
-	"shield_capacity":    100.0,
-	"engine_speed_mult":  1.5,
-	"hull_armor":         50.0,
-	"max_health":         200.0,
-}
-# Per-upgrade increment applied per level. Together with caps above, this
-# defines the number of upgrade levels available.
-const SHIP_UPGRADE_INCREMENT = {
-	"cargo_max_m3":       25.0,
-	"mining_laser_yield": 1.0,
-	"shield_capacity":    25.0,
-	"engine_speed_mult":  0.1,
-	"hull_armor":         10.0,
-	"max_health":         25.0,
-}
-# Quadratic cost curve: cost at level N = base_cost * 2^(N-1)
-# (so 100, 200, 400, 800, 1600...). Stops 'buy everything on day 2' and
-# makes each upgrade feel like a milestone.
-const SHIP_UPGRADE_BASE_COST = {
-	"cargo_max_m3":       100,
-	"mining_laser_yield": 150,
-	"shield_capacity":    800,
-	"engine_speed_mult":  250,
-	"hull_armor":         200,
-	"max_health":         300,
-}
-# Which other upgrade level a given upgrade is GATED behind. Empty = no gate.
-# Gating is a soft tutorial — you can't buy shields until you've expanded
-# cargo once. Once you have the prerequisite level, the upgrade unlocks.
-const SHIP_UPGRADE_GATES = {
-	"shield_capacity":    { "requires_stat": "cargo_max_m3", "requires_level": 1 },
+const UPGRADE_TREE = {
+	"weapons": {
+		"base_power": 50,
+		"branches": {
+			"rapid": {
+				2: { "cost_cr": 200, "cost_ore": 50, "power": 60, "stats": {"weapon_cooldown": 0.6, "weapon_damage": 20} },
+				3: { "cost_cr": 400, "cost_ore": 100, "power": 70, "stats": {"weapon_cooldown": 0.45, "weapon_damage": 20} },
+				4: { "cost_cr": 800, "cost_ore": 200, "power": 80, "stats": {"weapon_cooldown": 0.35, "weapon_damage": 20} },
+				5: { "cost_cr": 1600, "cost_ore": 400, "power": 100, "stats": {"weapon_cooldown": 0.25, "weapon_damage": 20, "has_max_rapid_weapon": true} }
+			},
+			"heavy": {
+				2: { "cost_cr": 200, "cost_ore": 50, "power": 60, "stats": {"weapon_cooldown": 0.8, "weapon_damage": 30} },
+				3: { "cost_cr": 400, "cost_ore": 100, "power": 70, "stats": {"weapon_cooldown": 0.9, "weapon_damage": 45} },
+				4: { "cost_cr": 800, "cost_ore": 200, "power": 80, "stats": {"weapon_cooldown": 1.0, "weapon_damage": 65} },
+				5: { "cost_cr": 1600, "cost_ore": 400, "power": 100, "stats": {"weapon_cooldown": 1.1, "weapon_damage": 90, "has_max_heavy_weapon": true} }
+			}
+		}
+	},
+	"engine": {
+		"base_power": 100,
+		"branches": {
+			"speed": {
+				2: { "cost_cr": 250, "cost_ore": 0, "power": 110, "stats": {"engine_speed_mult": 1.2, "acceleration_mult": 1.2} },
+				3: { "cost_cr": 500, "cost_ore": 50, "power": 120, "stats": {"engine_speed_mult": 1.4, "acceleration_mult": 1.4} },
+				4: { "cost_cr": 1000, "cost_ore": 100, "power": 140, "stats": {"engine_speed_mult": 1.6, "acceleration_mult": 1.6} },
+				5: { "cost_cr": 2000, "cost_ore": 200, "power": 160, "stats": {"engine_speed_mult": 1.9, "acceleration_mult": 1.9, "has_max_speed_engine": true} }
+			},
+			"hauler": {
+				2: { "cost_cr": 250, "cost_ore": 100, "power": 110, "stats": {"ignore_cargo_mass": true, "engine_speed_mult": 1.0, "acceleration_mult": 1.0} },
+				3: { "cost_cr": 500, "cost_ore": 200, "power": 120, "stats": {"ignore_cargo_mass": true, "engine_speed_mult": 1.05, "acceleration_mult": 1.05} },
+				4: { "cost_cr": 1000, "cost_ore": 400, "power": 140, "stats": {"ignore_cargo_mass": true, "engine_speed_mult": 1.1, "acceleration_mult": 1.1} },
+				5: { "cost_cr": 2000, "cost_ore": 800, "power": 160, "stats": {"ignore_cargo_mass": true, "engine_speed_mult": 1.15, "acceleration_mult": 1.15, "has_max_hauler_engine": true, "hull_armor": -10} }
+			}
+		}
+	},
+	"shields": {
+		"base_power": 50,
+		"branches": {
+			"bulwark": {
+				2: { "cost_cr": 300, "cost_ore": 100, "power": 60, "stats": {"shield_capacity": 50, "shield_regen_rate": 2.0, "shield_regen_delay": 15.0} },
+				3: { "cost_cr": 600, "cost_ore": 200, "power": 80, "stats": {"shield_capacity": 100, "shield_regen_rate": 3.0, "shield_regen_delay": 15.0} },
+				4: { "cost_cr": 1200, "cost_ore": 400, "power": 100, "stats": {"shield_capacity": 150, "shield_regen_rate": 4.0, "shield_regen_delay": 15.0} },
+				5: { "cost_cr": 2400, "cost_ore": 800, "power": 130, "stats": {"shield_capacity": 250, "shield_regen_rate": 5.0, "shield_regen_delay": 15.0, "has_max_bulwark_shield": true} }
+			},
+			"deflector": {
+				2: { "cost_cr": 300, "cost_ore": 50, "power": 60, "stats": {"shield_capacity": 20, "shield_regen_rate": 10.0, "shield_regen_delay": 5.0} },
+				3: { "cost_cr": 600, "cost_ore": 100, "power": 80, "stats": {"shield_capacity": 30, "shield_regen_rate": 15.0, "shield_regen_delay": 4.0} },
+				4: { "cost_cr": 1200, "cost_ore": 200, "power": 100, "stats": {"shield_capacity": 40, "shield_regen_rate": 20.0, "shield_regen_delay": 3.0} },
+				5: { "cost_cr": 2400, "cost_ore": 400, "power": 130, "stats": {"shield_capacity": 60, "shield_regen_rate": 30.0, "shield_regen_delay": 2.0, "has_max_deflector_shield": true} }
+			}
+		}
+	},
+	"mining": {
+		"base_power": 100,
+		"branches": {
+			"rapid": {
+				2: { "cost_cr": 150, "cost_ore": 50, "power": 120, "stats": {"mining_cooldown": 0.8, "mining_laser_yield": 1.0} },
+				3: { "cost_cr": 300, "cost_ore": 100, "power": 140, "stats": {"mining_cooldown": 0.6, "mining_laser_yield": 1.0} },
+				4: { "cost_cr": 600, "cost_ore": 200, "power": 160, "stats": {"mining_cooldown": 0.4, "mining_laser_yield": 1.0} },
+				5: { "cost_cr": 1200, "cost_ore": 400, "power": 180, "stats": {"mining_cooldown": 0.2, "mining_laser_yield": 1.0, "has_max_rapid_mining": true} }
+			},
+			"deep": {
+				2: { "cost_cr": 150, "cost_ore": 100, "power": 120, "stats": {"mining_cooldown": 1.2, "mining_laser_yield": 2.0} },
+				3: { "cost_cr": 300, "cost_ore": 200, "power": 140, "stats": {"mining_cooldown": 1.5, "mining_laser_yield": 4.0} },
+				4: { "cost_cr": 600, "cost_ore": 400, "power": 160, "stats": {"mining_cooldown": 1.8, "mining_laser_yield": 8.0} },
+				5: { "cost_cr": 1200, "cost_ore": 800, "power": 180, "stats": {"mining_cooldown": 2.5, "mining_laser_yield": 15.0, "has_max_deep_mining": true} }
+			}
+		}
+	},
+	"cargo": {
+		"base_power": 0,
+		"branches": {
+			"standard": {
+				2: { "cost_cr": 100, "cost_ore": 100, "power": 0, "stats": {"cargo_max_m3": 150.0} },
+				3: { "cost_cr": 200, "cost_ore": 200, "power": 0, "stats": {"cargo_max_m3": 250.0} },
+				4: { "cost_cr": 400, "cost_ore": 400, "power": 0, "stats": {"cargo_max_m3": 400.0} },
+				5: { "cost_cr": 800, "cost_ore": 800, "power": 0, "stats": {"cargo_max_m3": 600.0} }
+			}
+		}
+	},
+	"power": {
+		"base_power": 0,
+		"branches": {
+			"standard": {
+				2: { "cost_cr": 500, "cost_ore": 200, "power": 0, "capacity": 350 },
+				3: { "cost_cr": 1000, "cost_ore": 400, "power": 0, "capacity": 420 },
+				4: { "cost_cr": 2000, "cost_ore": 800, "power": 0, "capacity": 500 },
+				5: { "cost_cr": 4000, "cost_ore": 1600, "power": 0, "capacity": 650 }
+			}
+		}
+	}
 }
 
 # ── Minor Faction Registry ────────────────────────────────────────────────────
@@ -611,17 +675,46 @@ func cargo_display_text() -> String:
 			return "SPECIAL: " + cargo_special.get("name", "(unnamed)")
 	return ""
 
+var player_storage_ore: float = 0.0
+var player_storage_max: float = 1000.0
+var power_capacity: float = 300.0
+
+var current_upgrades: Dictionary = {
+	"weapons": {"tier": 1, "path": "base"},
+	"engine": {"tier": 1, "path": "base"},
+	"shields": {"tier": 1, "path": "base"},
+	"mining": {"tier": 1, "path": "base"},
+	"cargo": {"tier": 1, "path": "base"},
+	"power": {"tier": 1, "path": "base"}
+}
+
 # Upgradeable ship stats — defaults sourced from SHIP_BASE_STATS so the
-# starter ship is internally consistent with the cap table.
 var cargo_max: float = SHIP_BASE_STATS["cargo_max_m3"]
 var mining_yield: float = SHIP_BASE_STATS["mining_laser_yield"]
+var mining_cooldown: float = SHIP_BASE_STATS["mining_cooldown"]
+var weapon_damage: float = SHIP_BASE_STATS["weapon_damage"]
+var weapon_cooldown: float = SHIP_BASE_STATS["weapon_cooldown"]
 var shield_capacity: float = SHIP_BASE_STATS["shield_capacity"]
+var shield_regen_delay: float = SHIP_BASE_STATS["shield_regen_delay"]
+var shield_regen_rate: float = SHIP_BASE_STATS["shield_regen_rate"]
 var engine_speed_mult: float = SHIP_BASE_STATS["engine_speed_mult"]
+var acceleration_mult: float = SHIP_BASE_STATS["acceleration_mult"]
+var ignore_cargo_mass: bool = SHIP_BASE_STATS["ignore_cargo_mass"]
 var hull_armor: float = SHIP_BASE_STATS["hull_armor"]
 var player_max_health: float = SHIP_BASE_STATS["max_health"]
 
+# Max Tier Drawback Flags
+var has_max_rapid_weapon: bool = false
+var has_max_heavy_weapon: bool = false
+var has_max_speed_engine: bool = false
+var has_max_hauler_engine: bool = false
+var has_max_bulwark_shield: bool = false
+var has_max_deflector_shield: bool = false
+var has_max_rapid_mining: bool = false
+var has_max_deep_mining: bool = false
+
 # Non-upgradeable baseline
-var damage: float = 5.0
+var damage: float = weapon_damage # Legacy support until swapped
 var laser_range: float = 80.0
 var destroyed_ships_pool: int = 0
 
@@ -793,12 +886,39 @@ func reset_for_restart():
 	player_credits = 50
 	cargo = 0.0
 	cargo_max = SHIP_BASE_STATS["cargo_max_m3"]
+	player_storage_ore = 0.0
+	current_upgrades = {
+		"weapons": {"tier": 1, "path": "base"},
+		"engine": {"tier": 1, "path": "base"},
+		"shields": {"tier": 1, "path": "base"},
+		"mining": {"tier": 1, "path": "base"},
+		"cargo": {"tier": 1, "path": "base"},
+		"power": {"tier": 1, "path": "base"}
+	}
+	apply_upgrade_stats()
 	mining_yield = SHIP_BASE_STATS["mining_laser_yield"]
+	mining_cooldown = SHIP_BASE_STATS["mining_cooldown"]
+	weapon_damage = SHIP_BASE_STATS["weapon_damage"]
+	weapon_cooldown = SHIP_BASE_STATS["weapon_cooldown"]
 	shield_capacity = SHIP_BASE_STATS["shield_capacity"]
+	shield_regen_delay = SHIP_BASE_STATS["shield_regen_delay"]
+	shield_regen_rate = SHIP_BASE_STATS["shield_regen_rate"]
 	engine_speed_mult = SHIP_BASE_STATS["engine_speed_mult"]
+	acceleration_mult = SHIP_BASE_STATS["acceleration_mult"]
+	ignore_cargo_mass = SHIP_BASE_STATS["ignore_cargo_mass"]
 	hull_armor = SHIP_BASE_STATS["hull_armor"]
 	player_max_health = SHIP_BASE_STATS["max_health"]
-	damage = 5.0
+	
+	has_max_rapid_weapon = false
+	has_max_heavy_weapon = false
+	has_max_speed_engine = false
+	has_max_hauler_engine = false
+	has_max_bulwark_shield = false
+	has_max_deflector_shield = false
+	has_max_rapid_mining = false
+	has_max_deep_mining = false
+	
+	damage = weapon_damage
 	laser_range = 80.0
 	destroyed_ships_pool = 0
 	# Reset reputations
@@ -808,105 +928,172 @@ func reset_for_restart():
 	print("[GlobalState] State reset for new game.")
 
 
-# ── Ship Upgrade Helpers ──────────────────────────────────────────────────────
-# All these read from the cap tables above. The maintenance bay UI calls
-# these to render button states; the apply functions call _apply_stat_upgrade
-# to do the actual work.
+# ── Ship Upgrade Logic ────────────────────────────────────────────────────────
 
-# Returns the current level (0 = base, N = bought N upgrades) for a given stat.
-# Level is derived from the current value, so the source of truth stays
-# in the SHIP_BASE_STATS / SHIP_MAX_STATS tables.
-func _get_stat_level(stat_name: String) -> int:
-	if not SHIP_BASE_STATS.has(stat_name):
-		return 0
-	var base_val = SHIP_BASE_STATS[stat_name]
-	var increment = SHIP_UPGRADE_INCREMENT.get(stat_name, 1.0)
-	var current_val = _read_current_stat(stat_name)
-	# How many increments above base?
-	var diff = current_val - base_val
-	if increment <= 0.0:
-		return 0
-	return int(round(diff / increment))
+func apply_upgrade_stats():
+	# Reset stats to base first
+	cargo_max = SHIP_BASE_STATS["cargo_max_m3"]
+	mining_yield = SHIP_BASE_STATS["mining_laser_yield"]
+	mining_cooldown = SHIP_BASE_STATS["mining_cooldown"]
+	weapon_damage = SHIP_BASE_STATS["weapon_damage"]
+	weapon_cooldown = SHIP_BASE_STATS["weapon_cooldown"]
+	shield_capacity = SHIP_BASE_STATS["shield_capacity"]
+	shield_regen_delay = SHIP_BASE_STATS["shield_regen_delay"]
+	shield_regen_rate = SHIP_BASE_STATS["shield_regen_rate"]
+	engine_speed_mult = SHIP_BASE_STATS["engine_speed_mult"]
+	acceleration_mult = SHIP_BASE_STATS["acceleration_mult"]
+	ignore_cargo_mass = SHIP_BASE_STATS["ignore_cargo_mass"]
+	hull_armor = SHIP_BASE_STATS["hull_armor"]
+	player_max_health = SHIP_BASE_STATS["max_health"]
+	power_capacity = 300.0
 
-func _get_stat_max_level(stat_name: String) -> int:
-	if not SHIP_BASE_STATS.has(stat_name):
-		return 0
-	var base_val = SHIP_BASE_STATS[stat_name]
-	var cap_val = SHIP_MAX_STATS.get(stat_name, base_val)
-	var increment = SHIP_UPGRADE_INCREMENT.get(stat_name, 1.0)
-	var total_increments = cap_val - base_val
-	if increment <= 0.0:
-		return 0
-	return int(round(total_increments / increment))
+	has_max_rapid_weapon = false
+	has_max_heavy_weapon = false
+	has_max_speed_engine = false
+	has_max_hauler_engine = false
+	has_max_bulwark_shield = false
+	has_max_deflector_shield = false
+	has_max_rapid_mining = false
+	has_max_deep_mining = false
 
-func _get_stat_current_value(stat_name: String) -> float:
-	return _read_current_stat(stat_name)
+	# Apply tier data
+	for sys in current_upgrades.keys():
+		var info = current_upgrades[sys]
+		var tier = info["tier"]
+		if tier > 1:
+			var path = info["path"]
+			if UPGRADE_TREE.has(sys) and UPGRADE_TREE[sys]["branches"].has(path):
+				var tier_data = UPGRADE_TREE[sys]["branches"][path][tier]
+				if tier_data.has("capacity"):
+					power_capacity = float(tier_data["capacity"])
+				if tier_data.has("stats"):
+					for stat_key in tier_data["stats"].keys():
+						set(stat_key, tier_data["stats"][stat_key])
 
-func _get_stat_cap(stat_name: String) -> float:
-	return SHIP_MAX_STATS.get(stat_name, _read_current_stat(stat_name))
+	# Update player health bounds
+	if player and is_instance_valid(player):
+		var p_max = player.get("max_health")
+		if player.get("health") >= p_max - 0.01:
+			player.set("max_health", player_max_health)
+			player.set("health", player_max_health)
+		else:
+			player.set("max_health", player_max_health)
+			player.set("health", min(player.get("health"), player_max_health))
 
-# Quadratic cost: base_cost * 2^(current_level). So 100, 200, 400, 800...
-func _get_upgrade_cost(stat_name: String) -> int:
-	var base = SHIP_UPGRADE_BASE_COST.get(stat_name, 999999)
-	var level = _get_stat_level(stat_name)
-	return base * (1 << level)  # bit-shift = pow(2, level)
+func get_current_power_draw() -> float:
+	var total = 0.0
+	for sys in current_upgrades.keys():
+		if sys == "power": continue
+		
+		var info = current_upgrades[sys]
+		var tier = info["tier"]
+		if tier == 1:
+			if UPGRADE_TREE.has(sys):
+				total += UPGRADE_TREE[sys]["base_power"]
+		else:
+			var path = info["path"]
+			if UPGRADE_TREE.has(sys) and UPGRADE_TREE[sys]["branches"].has(path):
+				total += UPGRADE_TREE[sys]["branches"][path][tier]["power"]
+	return total
 
-# Returns true if the upgrade is unlocked (passes any gates).
-func _is_upgrade_unlocked(stat_name: String) -> bool:
-	if not SHIP_UPGRADE_GATES.has(stat_name):
-		return true
-	var gate = SHIP_UPGRADE_GATES[stat_name]
-	var prereq_level = _get_stat_level(gate["requires_stat"])
-	return prereq_level >= int(gate["requires_level"])
-
-# Returns true if the upgrade is maxed (level == max_level).
-func _is_upgrade_maxed(stat_name: String) -> bool:
-	return _get_stat_level(stat_name) >= _get_stat_max_level(stat_name)
-
-# Apply the upgrade: bump the stat by one increment, deduct credits, emit signal.
-# Returns true on success, false on failure (already maxed, gated, or broke).
-func _apply_stat_upgrade(stat_name: String) -> bool:
-	if _is_upgrade_maxed(stat_name):
+func purchase_upgrade(sys: String, path: String) -> bool:
+	var info = current_upgrades[sys]
+	var next_tier = info["tier"] + 1
+	if next_tier > 5:
+		return false # Maxed
+		
+	# If branching at tier 2
+	if info["tier"] == 1:
+		pass # Any path is valid
+	else:
+		if info["path"] != path:
+			# Trying to switch paths? Must use refund_upgrade explicitly.
+			return false 
+			
+	if not UPGRADE_TREE[sys]["branches"].has(path):
 		return false
-	if not _is_upgrade_unlocked(stat_name):
+	if not UPGRADE_TREE[sys]["branches"][path].has(next_tier):
 		return false
-	var cost = _get_upgrade_cost(stat_name)
-	if player_credits < cost:
+		
+	var data = UPGRADE_TREE[sys]["branches"][path][next_tier]
+	var cost_cr = data["cost_cr"]
+	var cost_ore = data["cost_ore"]
+	var next_power = data.get("power", 0)
+	
+	var current_power = UPGRADE_TREE[sys]["base_power"]
+	if info["tier"] > 1:
+		current_power = UPGRADE_TREE[sys]["branches"][info["path"]][info["tier"]].get("power", 0)
+		
+	var power_diff = next_power - current_power
+	if sys != "power" and get_current_power_draw() + power_diff > power_capacity:
+		return false # Insufficient power
+		
+	if player_credits < cost_cr:
 		return false
-	player_credits -= cost
-	var increment = SHIP_UPGRADE_INCREMENT[stat_name]
-	var new_val = _read_current_stat(stat_name) + increment
-	_write_current_stat(stat_name, new_val)
-	ship_stat_changed.emit(stat_name, new_val)
-	print("[GlobalState] Upgraded %s to %.1f for %d SC" % [stat_name, new_val, cost])
+		
+	# Check combined ore from cargo + storage
+	var total_ore = 0.0
+	if cargo_type == CargoType.ORE:
+		total_ore += cargo
+	total_ore += player_storage_ore
+	
+	if total_ore < cost_ore:
+		return false
+		
+	# Deduct
+	player_credits -= cost_cr
+	var remaining_ore_cost = cost_ore
+	if cargo_type == CargoType.ORE:
+		if cargo >= remaining_ore_cost:
+			cargo -= remaining_ore_cost
+			remaining_ore_cost = 0
+		else:
+			remaining_ore_cost -= cargo
+			cargo = 0.0
+	
+	player_storage_ore -= remaining_ore_cost
+	
+	current_upgrades[sys] = {"tier": next_tier, "path": path}
+	apply_upgrade_stats()
+	print("[GlobalState] Upgraded %s to tier %d path %s" % [sys, next_tier, path])
 	return true
 
-# Internal helpers — map the SHIP_BASE_STATS key to the live var name.
-func _read_current_stat(stat_name: String) -> float:
-	match stat_name:
-		"cargo_max_m3":       return cargo_max
-		"mining_laser_yield": return mining_yield
-		"shield_capacity":    return shield_capacity
-		"engine_speed_mult":  return engine_speed_mult
-		"hull_armor":         return hull_armor
-		"max_health":         return player_max_health
-	return 0.0
+func refund_upgrade(sys: String):
+	var info = current_upgrades[sys]
+	if info["tier"] <= 1:
+		return
+		
+	var path = info["path"]
+	var tier = info["tier"]
+	
+	var total_cr_refund = 0
+	var total_ore_refund = 0
+	
+	for t in range(2, tier + 1):
+		var data = UPGRADE_TREE[sys]["branches"][path][t]
+		total_cr_refund += int(data["cost_cr"] * 0.5)
+		total_ore_refund += int(data["cost_ore"] * 0.5)
+		
+	player_credits += total_cr_refund
+	player_storage_ore += total_ore_refund
+	if player_storage_ore > player_storage_max:
+		player_storage_ore = player_storage_max
+		
+	current_upgrades[sys] = {"tier": 1, "path": "base"}
+	apply_upgrade_stats()
 
-func _write_current_stat(stat_name: String, val: float) -> void:
-	match stat_name:
-		"cargo_max_m3":       cargo_max = val
-		"mining_laser_yield": mining_yield = val
-		"shield_capacity":    shield_capacity = val
-		"engine_speed_mult":  engine_speed_mult = val
-		"hull_armor":         hull_armor = val
-		"max_health":
-			player_max_health = val
-			# If player is currently at full HP, also bump their current HP up
-			if player and is_instance_valid(player):
-				var p_max = player.get("max_health")
-				if player.get("health") >= p_max - 0.01:
-					player.set("max_health", val)
-					player.set("health", val)
+func deposit_ore(amount: float) -> bool:
+	if cargo_type != CargoType.ORE or cargo < amount:
+		return false
+	if player_storage_ore + amount > player_storage_max:
+		return false
+		
+	cargo -= amount
+	player_storage_ore += amount
+	if cargo <= 0.0:
+		clear_cargo()
+	return true
+
 
 
 func _setup_inputs():
