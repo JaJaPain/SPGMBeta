@@ -3848,6 +3848,7 @@ func _complete_pickup_with_handoff() -> void:
 		
 	var success: bool = QuestManager.mark_pickup_complete()
 	if success:
+		_render_dock_submenu()
 		var display_line = line if line != "" else "Picked up '%s' from %s. Deliver to Grease Monkeys." % [picked_part, picked_npc]
 		show_dock_message(display_line, picked_npc, npc_color, npc_portrait)
 		
@@ -3862,8 +3863,6 @@ func _complete_pickup_with_handoff() -> void:
 			flavor_dict["voice_id"] = GlobalState.MINOR_NPCS[picked_npc].get("voice_id", flavor_dict["voice_id"])
 			flavor_dict["voice_speed"] = GlobalState.MINOR_NPCS[picked_npc].get("voice_speed", flavor_dict["voice_speed"])
 		GlobalState.emit_npc_flavor(flavor_dict)
-		
-		_render_dock_submenu()
 	else:
 		push_warning("[UIManager] _complete_pickup_with_handoff: mark_pickup_complete returned false")
 
