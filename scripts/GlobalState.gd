@@ -720,6 +720,8 @@ var destroyed_ships_pool: int = 0
 
 # Game references
 var player: Node3D = null
+var active_system_root: Node3D = null
+var current_system_id: String = "start_system"
 var active_target: Node3D = null:
 	set(val):
 		active_target = val
@@ -779,13 +781,13 @@ func spawn_reinforcement(faction_name: String):
 		npc.speed = 11.0
 		npc.name = faction_name.to_upper() + "_EliteReinforcement_" + str(randi() % 1000)
 		
-		var current_scene = get_tree().current_scene
-		if current_scene:
-			current_scene.add_child(npc)
+		var system_root = get_system_root()
+		if system_root:
+			system_root.add_child(npc)
 			npc.global_position = spawn_pos
 			
 			# Trigger warning on HUD
-			var ui = current_scene.get_node_or_null("CanvasLayer/UIManager")
+			var ui = get_ui_manager()
 			if ui and ui.has_method("show_hud_warning"):
 				ui.show_hud_warning("WARNING: " + faction_name.to_upper() + " Elite Reinforcement has entered the area!")
 			
@@ -798,8 +800,8 @@ func spawn_mission_targets(faction_name: String, count: int):
 	if not player_node or not is_instance_valid(player_node) or player_node.get("destroyed"):
 		return
 	
-	var current_scene = get_tree().current_scene
-	if not current_scene:
+	var system_root = get_system_root()
+	if not system_root:
 		return
 	
 	var npc_scene = load("res://scenes/npc_ship.tscn")
@@ -810,7 +812,7 @@ func spawn_mission_targets(faction_name: String, count: int):
 	# Use the station as the spawn anchor so targets appear in open space,
 	# not on top of the dock where the player accepted the quest
 	var spawn_anchor: Vector3 = player_node.global_position
-	var station_node = current_scene.get_node_or_null("Station")
+	var station_node = get_primary_station()
 	if station_node and is_instance_valid(station_node):
 		spawn_anchor = station_node.global_position
 	
@@ -831,11 +833,11 @@ func spawn_mission_targets(faction_name: String, count: int):
 		# Mark as a quest target so QuestManager can count survivors and
 		# decide when to spawn replacements after NPC kills.
 		npc.set_meta("is_quest_target", true)
-		current_scene.add_child(npc)
+		system_root.add_child(npc)
 		npc.global_position = spawn_pos
 	
 	# HUD warning + chatter so the arrival feels like an event
-	var ui = current_scene.get_node_or_null("CanvasLayer/UIManager")
+	var ui = get_ui_manager()
 	if ui and ui.has_method("show_hud_warning"):
 		ui.show_hud_warning("CONTRACT ACTIVE: " + str(count) + " " + faction_name.to_upper() + " targets have entered the sector.")
 	emit_chatter("SYSTEM", "Sensor sweep: " + str(count) + " " + faction_name.to_upper() + " signatures detected in open space.", Color(0.0, 0.9, 0.9))
@@ -873,10 +875,32 @@ func _ready():
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	_setup_inputs()
 
+func get_system_root() -> Node3D:
+	if active_system_root and is_instance_valid(active_system_root):
+		return active_system_root
+	return get_tree().current_scene
+
+func get_ui_manager() -> Control:
+	var scene_root := get_tree().current_scene
+	if not scene_root:
+		return null
+	return scene_root.get_node_or_null("CanvasLayer/UIManager") as Control
+
+func get_primary_station() -> Node3D:
+	var system_root := get_system_root()
+	if not system_root:
+		return null
+	for node in get_tree().get_nodes_in_group("primary_station"):
+		if node is Node3D and system_root.is_ancestor_of(node):
+			return node as Node3D
+	return system_root.get_node_or_null("Station") as Node3D
+
 # Called before reload_current_scene() to avoid dangling references into the freed scene.
 func reset_for_restart():
 	# Null out all node references first
 	player = null
+	active_system_root = null
+	current_system_id = "start_system"
 	active_system_entities.clear()
 	# Directly set paused to avoid emitting game_paused into freed UIManager
 	paused = false

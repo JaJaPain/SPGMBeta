@@ -84,14 +84,14 @@ func _unhandled_input(event: InputEvent):
 		var t = GlobalState.active_target
 		if t and is_instance_valid(t):
 			nav_mode = "APPROACH"
-			var ui = get_node_or_null("../CanvasLayer/UIManager")
+			var ui = GlobalState.get_ui_manager()
 			if ui and ui.has_method("show_target_marker"):
 				ui.show_target_marker(t.global_position)
 	elif event.is_action_pressed("override_orbit"):
 		var t = GlobalState.active_target
 		if t and is_instance_valid(t):
 			nav_mode = "ORBIT"
-			var ui = get_node_or_null("../CanvasLayer/UIManager")
+			var ui = GlobalState.get_ui_manager()
 			if ui and ui.has_method("show_target_marker"):
 				ui.show_target_marker(t.global_position)
 	elif event.is_action_pressed("override_action"):
@@ -103,7 +103,7 @@ func _unhandled_input(event: InputEvent):
 				nav_mode = "DOCK"
 			else:
 				nav_mode = "ATTACK"
-			var ui = get_node_or_null("../CanvasLayer/UIManager")
+			var ui = GlobalState.get_ui_manager()
 			if ui and ui.has_method("show_target_marker"):
 				ui.show_target_marker(t.global_position)
 
@@ -125,12 +125,13 @@ func _unhandled_input(event: InputEvent):
 				# Short RMB click: Try targeting / open context menu
 				var hit = get_mouse_raycast_hit()
 				if hit.has("collider"):
-					var entity = hit.collider
-					while entity and entity.get_parent() != get_parent():
+					var entity: Node = hit.collider
+					var system_root := GlobalState.get_system_root()
+					while entity and system_root and entity.get_parent() != system_root:
 						entity = entity.get_parent()
 					if entity and entity != self:
 						GlobalState.active_target = entity
-						var ui = get_node_or_null("../CanvasLayer/UIManager")
+						var ui = GlobalState.get_ui_manager()
 						if ui and ui.has_method("show_context_menu"):
 							ui.show_context_menu(entity)
 							
@@ -573,14 +574,14 @@ func double_click_move(click_pos: Vector3):
 	target_position = click_pos
 	nav_mode = "MANUAL"
 	is_aligning = true
-	var ui = get_node_or_null("../CanvasLayer/UIManager")
+	var ui = GlobalState.get_ui_manager()
 	if ui and ui.has_method("show_target_marker"):
 		ui.show_target_marker(click_pos)
 
 func die():
 	destroyed = true
 	AudioManager.play_explosion(global_position)
-	var ui = get_node_or_null("../CanvasLayer/UIManager")
+	var ui = GlobalState.get_ui_manager()
 	if ui and ui.has_method("show_death_screen"):
 		ui.show_death_screen()
 	queue_free()

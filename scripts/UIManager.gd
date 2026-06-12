@@ -2870,31 +2870,33 @@ func _update_faction_rep_label(label_name: String, faction_id: String):
 
 func refresh_overview():
 	var entities: Array = []
-	var main = get_tree().current_scene
-	if not main: return
+	var system_root := GlobalState.get_system_root()
+	if not system_root:
+		return
 	
 	# Add ALL stations (main + outposts) by group — never hardcode node names
 	for node in get_tree().get_nodes_in_group("station"):
-		if is_instance_valid(node):
+		if is_instance_valid(node) and system_root.is_ancestor_of(node):
 			entities.append(node)
-	var gas_giant = main.get_node_or_null("GasGiant")
+	var gas_giant = system_root.get_node_or_null("GasGiant")
 	if gas_giant: entities.append(gas_giant)
-	var rocky_planet = main.get_node_or_null("RockyPlanet")
+	var rocky_planet = system_root.get_node_or_null("RockyPlanet")
 	if rocky_planet: entities.append(rocky_planet)
 
 	
 	# Add Asteroids
 	for node in get_tree().get_nodes_in_group("asteroid"):
-		entities.append(node)
+		if system_root.is_ancestor_of(node):
+			entities.append(node)
 		
 	# Add NPC Ships
 	for node in get_tree().get_nodes_in_group("ship"):
-		if node != GlobalState.player and is_instance_valid(node) and not node.get("destroyed"):
+		if node != GlobalState.player and is_instance_valid(node) and system_root.is_ancestor_of(node) and not node.get("destroyed"):
 			entities.append(node)
 			
 	# Add Wreckage
 	for node in get_tree().get_nodes_in_group("wreckage"):
-		if is_instance_valid(node):
+		if is_instance_valid(node) and system_root.is_ancestor_of(node):
 			entities.append(node)
 			
 	update_overview_list(entities)

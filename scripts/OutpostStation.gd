@@ -103,15 +103,8 @@ func _physics_process(delta: float) -> void:
 	rotate_y(0.025 * delta)
 
 func dock_player() -> void:
-	# Walk up to MainScene, then find UIManager through the CanvasLayer
-	var main = get_tree().current_scene
-	var ui: Node = null
-	if main:
-		var canvas = main.get_node_or_null("CanvasLayer")
-		if canvas:
-			ui = canvas.get_node_or_null("UIManager")
+	var ui: Node = GlobalState.get_ui_manager()
 	if ui and ui.has_method("toggle_dock_menu"):
 		ui.toggle_dock_menu(self)
 	else:
 		push_warning("[OutpostStation] dock_player(): Could not find UIManager node.")
-

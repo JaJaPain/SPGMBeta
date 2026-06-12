@@ -14,6 +14,8 @@ quests, and immersion.
 - Keep large binary models out of normal Git history. `assets/hypergate.glb`
   remains local and is covered by the repository's existing `*.glb` ignore
   rule.
+- Keep Godot's locally extracted `assets/hypergate_*` texture sidecars ignored
+  with the external model.
 - Treat `assets/hypergate.glb` as an external project prerequisite and document
   its expected path so a fresh checkout fails clearly rather than silently.
 - Perform implementation on a dedicated `codex/jumpgate-system` branch.
@@ -198,23 +200,23 @@ are absent.
 
 ### Phase 0: Git Safety
 
-- [ ] Confirm clean working tree.
-- [ ] Confirm `assets/hypergate.glb` remains excluded by the repository's
+- [x] Confirm clean working tree.
+- [x] Confirm `assets/hypergate.glb` remains excluded by the repository's
       `*.glb` ignore rule.
-- [ ] Document `assets/hypergate.glb` as a required external asset.
-- [ ] Create and switch to `codex/jumpgate-system`.
-- [ ] Commit this implementation plan.
-- [ ] Review the Phase 0 diff and Git status.
+- [x] Document `assets/hypergate.glb` as a required external asset.
+- [x] Create and switch to `codex/jumpgate-system`.
+- [x] Commit this implementation plan.
+- [x] Review the Phase 0 diff and Git status.
 
 ### Phase 1: Persistent Game Root
 
-- [ ] Add `GameRoot` with the player, UI, system container, and transition layer.
-- [ ] Extract the existing world into `system_start.tscn`.
-- [ ] Preserve current startup behavior.
-- [ ] Redirect system spawning to the active system root.
-- [ ] Update restart to reset and reload the full game.
-- [ ] Run Godot parse/startup checks.
-- [ ] Review the complete Phase 1 Git diff.
+- [x] Add `GameRoot` with the player, UI, system container, and transition layer.
+- [x] Extract the existing world into `system_start.tscn`.
+- [x] Preserve current startup behavior.
+- [x] Redirect system spawning to the active system root.
+- [x] Update restart to reset and reload the full game.
+- [x] Run Godot parse/startup checks.
+- [x] Review the complete Phase 1 Git diff.
 
 ### Phase 2: Reusable Gate And Test System
 

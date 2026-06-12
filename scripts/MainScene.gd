@@ -1,6 +1,6 @@
 extends Node3D
 
-@onready var ui_manager: Control = $CanvasLayer/UIManager
+var ui_manager: Control
 @onready var gas_giant: Node3D = $GasGiant
 @onready var rocky_planet: Node3D = $RockyPlanet
 @onready var station: StaticBody3D = $Station
@@ -9,6 +9,9 @@ var asteroid_scene = preload("res://scenes/asteroid.tscn")
 var npc_ship_scene = preload("res://scenes/npc_ship.tscn")
 
 func _ready():
+	GlobalState.active_system_root = self
+	GlobalState.current_system_id = "start_system"
+	ui_manager = GlobalState.get_ui_manager()
 	# Seed random number generator
 	randomize()
 	
@@ -37,8 +40,9 @@ func _ready():
 	_spawn_npc("vanguard", gas_giant.global_position + Vector3(80, 0, 0), 15.0)
 
 	
-	# Populating Overview list
-	_populate_overview()
+	# The persistent UI enters the tree after this system scene. Defer the first
+	# overview refresh so UIManager has finished constructing its dynamic nodes.
+	call_deferred("_populate_overview")
 	
 	# Spawn the salvager ship near space station
 	_spawn_salvager()
@@ -86,6 +90,8 @@ func _spawn_npc(faction_name: String, pos: Vector3, npc_speed: float):
 	npc.global_position = pos
 
 func _populate_overview():
+	if not ui_manager:
+		ui_manager = GlobalState.get_ui_manager()
 	if ui_manager and ui_manager.has_method("refresh_overview"):
 		ui_manager.refresh_overview()
 
@@ -203,4 +209,3 @@ func _spawn_npc_flying_in():
 	
 	# Set its patrol center to the destination so it flies in
 	npc.patrol_center = patrol_dest
-

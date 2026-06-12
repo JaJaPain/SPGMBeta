@@ -102,6 +102,6 @@ func _physics_process(delta: float):
 		rotate_y(0.025 * delta)
 
 func dock_player():
-	var ui = get_node_or_null("../CanvasLayer/UIManager")
+	var ui = GlobalState.get_ui_manager()
 	if ui and ui.has_method("toggle_dock_menu"):
 		ui.toggle_dock_menu(self)
