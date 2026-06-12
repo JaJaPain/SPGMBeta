@@ -833,6 +833,8 @@ func spawn_mission_targets(faction_name: String, count: int):
 		# Mark as a quest target so QuestManager can count survivors and
 		# decide when to spawn replacements after NPC kills.
 		npc.set_meta("is_quest_target", true)
+		npc.persistent_id = "quest_target_%s_%d" % [faction_name, i]
+		npc.add_to_group("persistent_entity")
 		system_root.add_child(npc)
 		npc.global_position = spawn_pos
 	

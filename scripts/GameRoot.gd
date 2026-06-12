@@ -7,6 +7,9 @@ const SYSTEM_SCENES: Dictionary = {
 	"test_system": preload("res://scenes/systems/system_test.tscn"),
 }
 const ARRIVAL_COOLDOWN_SECONDS := 2.5
+const SAVE_VERSION := 1
+const SAVE_PATH := "user://savegame.json"
+const NPC_SHIP_SCENE := preload("res://scenes/npc_ship.tscn")
 
 @onready var system_container: Node3D = $SystemContainer
 @onready var player: CharacterBody3D = $PlayerShip
@@ -15,6 +18,8 @@ const ARRIVAL_COOLDOWN_SECONDS := 2.5
 var transition_in_progress: bool = false
 var jump_request_pending: bool = false
 var arrival_cooldown_until_msec: int = 0
+var system_states: Dictionary = {}
+var last_arrival_gate_id: String = ""
 
 func _ready() -> void:
 	var system_root := system_container.get_child(0) as Node3D
@@ -22,6 +27,8 @@ func _ready() -> void:
 	GlobalState.current_system_id = "start_system"
 	if "--jump-smoke-test" in OS.get_cmdline_user_args():
 		call_deferred("_run_jump_smoke_test")
+	elif "--no-save-load" not in OS.get_cmdline_user_args():
+		call_deferred("_load_startup_save")
 
 func get_active_system_root() -> Node3D:
 	return GlobalState.get_system_root()
@@ -97,6 +104,7 @@ func _change_system(destination_system_id: String, arrival_gate_id: String) -> v
 		create_tween().tween_property(camera, "fov", min(original_fov + 24.0, 120.0), effect_duration)
 	await transition_fx.play_entry(effect_duration)
 	AudioManager.play_jump_transit()
+	_capture_current_system_state()
 	GlobalState.active_target = null
 	GlobalState.active_system_entities.clear()
 
@@ -110,9 +118,11 @@ func _change_system(destination_system_id: String, arrival_gate_id: String) -> v
 	GlobalState.active_system_root = new_system
 	GlobalState.current_system_id = destination_system_id
 	await get_tree().process_frame
+	_restore_system_state(destination_system_id, new_system)
 
 	var arrival_transform: Transform3D = arrival_gate.call("get_arrival_transform")
 	player.global_transform = arrival_transform
+	last_arrival_gate_id = arrival_gate_id
 
 	AudioManager.play_jump_arrival()
 	await transition_fx.play_exit(0.05 if DisplayServer.get_name() == "headless" else 0.9)
@@ -122,6 +132,7 @@ func _change_system(destination_system_id: String, arrival_gate_id: String) -> v
 	arrival_cooldown_until_msec = Time.get_ticks_msec() + int(ARRIVAL_COOLDOWN_SECONDS * 1000.0)
 	transition_in_progress = false
 	system_changed.emit(destination_system_id, arrival_gate_id)
+	save_game()
 
 	var ui := GlobalState.get_ui_manager()
 	if ui and ui.has_method("refresh_overview"):
@@ -157,6 +168,186 @@ func _prepare_player_after_system_change() -> void:
 	player.set("nav_mode", "MANUAL")
 	player.set_physics_process(true)
 	player.set_process_unhandled_input(true)
+
+func record_persistent_entity_state(entity: Node) -> void:
+	if not entity or not entity.has_method("get_persistent_id") or not entity.has_method("capture_state"):
+		return
+	var entity_id: String = entity.get_persistent_id()
+	if entity_id == "":
+		return
+	var state: Dictionary = system_states.get(GlobalState.current_system_id, {})
+	var entities: Dictionary = state.get("entities", {})
+	entities[entity_id] = entity.capture_state()
+	state["entities"] = entities
+	system_states[GlobalState.current_system_id] = state
+
+func _capture_current_system_state() -> void:
+	var system_root := get_active_system_root()
+	if not system_root:
+		return
+	var state: Dictionary = system_states.get(GlobalState.current_system_id, {})
+	var entities: Dictionary = state.get("entities", {})
+	for entity in get_tree().get_nodes_in_group("persistent_entity"):
+		if is_instance_valid(entity) and system_root.is_ancestor_of(entity):
+			if entity.has_method("get_persistent_id") and entity.has_method("capture_state"):
+				var entity_id: String = entity.get_persistent_id()
+				if entity_id != "":
+					entities[entity_id] = entity.capture_state()
+	state["entities"] = entities
+	system_states[GlobalState.current_system_id] = state
+
+func _restore_system_state(system_id: String, system_root: Node3D) -> void:
+	var state: Dictionary = system_states.get(system_id, {})
+	var entities: Dictionary = state.get("entities", {})
+	if entities.is_empty():
+		return
+	var restored_ids: Dictionary = {}
+	for entity in get_tree().get_nodes_in_group("persistent_entity"):
+		if is_instance_valid(entity) and system_root.is_ancestor_of(entity) and entity.has_method("get_persistent_id"):
+			var entity_id: String = entity.get_persistent_id()
+			if entities.has(entity_id) and entity.has_method("restore_state"):
+				entity.restore_state(entities[entity_id])
+				restored_ids[entity_id] = true
+	for entity_id in entities.keys():
+		if restored_ids.has(entity_id):
+			continue
+		var entity_state: Dictionary = entities[entity_id]
+		if entity_state.get("type", "") == "mission_ship" and not bool(entity_state.get("destroyed", false)):
+			var npc := NPC_SHIP_SCENE.instantiate()
+			npc.name = entity_id
+			npc.persistent_id = entity_id
+			npc.faction = str(entity_state.get("faction", "zenith"))
+			npc.set_meta("is_quest_target", true)
+			npc.add_to_group("persistent_entity")
+			system_root.add_child(npc)
+			npc.restore_state(entity_state)
+
+func save_game() -> bool:
+	_capture_current_system_state()
+	var save_data := {
+		"version": SAVE_VERSION,
+		"current_system_id": GlobalState.current_system_id,
+		"arrival_gate_id": last_arrival_gate_id,
+		"player": _capture_player_state(),
+		"global": _capture_global_state(),
+		"quest": QuestManager.active_quest.duplicate(true),
+		"systems": system_states.duplicate(true),
+	}
+	var file := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
+	if not file:
+		push_warning("[GameRoot] Could not open save file for writing.")
+		return false
+	file.store_string(JSON.stringify(save_data))
+	return true
+
+func load_game() -> bool:
+	if not FileAccess.file_exists(SAVE_PATH):
+		return false
+	var file := FileAccess.open(SAVE_PATH, FileAccess.READ)
+	if not file:
+		return false
+	var parsed = JSON.parse_string(file.get_as_text())
+	if not _is_valid_save_data(parsed):
+		push_warning("[GameRoot] Save file is missing, malformed, or unsupported.")
+		return false
+	await _apply_save_data(parsed)
+	return true
+
+func delete_savegame() -> void:
+	if FileAccess.file_exists(SAVE_PATH):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(SAVE_PATH))
+
+func _load_startup_save() -> void:
+	await get_tree().process_frame
+	await load_game()
+
+func _is_valid_save_data(data: Variant) -> bool:
+	if not data is Dictionary:
+		return false
+	if int(data.get("version", -1)) != SAVE_VERSION:
+		return false
+	if not SYSTEM_SCENES.has(str(data.get("current_system_id", ""))):
+		return false
+	return data.get("player", null) is Dictionary \
+		and data.get("global", null) is Dictionary \
+		and data.get("quest", null) is Dictionary \
+		and data.get("systems", null) is Dictionary
+
+func _apply_save_data(data: Dictionary) -> void:
+	system_states = data.get("systems", {}).duplicate(true)
+	last_arrival_gate_id = str(data.get("arrival_gate_id", ""))
+	_apply_global_state(data.get("global", {}))
+	QuestManager.active_quest = data.get("quest", {}).duplicate(true)
+	var target_system_id := str(data.get("current_system_id", "start_system"))
+	if target_system_id != GlobalState.current_system_id:
+		await _load_system_without_transition(target_system_id)
+	else:
+		_restore_system_state(target_system_id, get_active_system_root())
+	_apply_player_state(data.get("player", {}))
+	var ui := GlobalState.get_ui_manager()
+	if ui:
+		ui.call_deferred("refresh_overview")
+
+func _load_system_without_transition(system_id: String) -> void:
+	var packed_system := SYSTEM_SCENES.get(system_id) as PackedScene
+	if not packed_system:
+		return
+	GlobalState.active_target = null
+	GlobalState.active_system_entities.clear()
+	var old_system := get_active_system_root()
+	GlobalState.active_system_root = null
+	if old_system:
+		old_system.queue_free()
+		await get_tree().process_frame
+	var new_system := packed_system.instantiate() as Node3D
+	system_container.add_child(new_system)
+	GlobalState.active_system_root = new_system
+	GlobalState.current_system_id = system_id
+	await get_tree().process_frame
+	_restore_system_state(system_id, new_system)
+
+func _capture_player_state() -> Dictionary:
+	return {
+		"health": player.get("health"),
+		"shield": player.get("current_shield"),
+		"position": [player.global_position.x, player.global_position.y, player.global_position.z],
+		"rotation": [player.global_rotation.x, player.global_rotation.y, player.global_rotation.z],
+	}
+
+func _apply_player_state(state: Dictionary) -> void:
+	player.set("max_health", GlobalState.player_max_health)
+	player.set("health", clampf(float(state.get("health", GlobalState.player_max_health)), 0.0, GlobalState.player_max_health))
+	player.set("current_shield", clampf(float(state.get("shield", GlobalState.shield_capacity)), 0.0, GlobalState.shield_capacity))
+	var saved_position: Array = state.get("position", [])
+	if saved_position.size() == 3:
+		player.global_position = Vector3(float(saved_position[0]), float(saved_position[1]), float(saved_position[2]))
+	var saved_rotation: Array = state.get("rotation", [])
+	if saved_rotation.size() == 3:
+		player.global_rotation = Vector3(float(saved_rotation[0]), float(saved_rotation[1]), float(saved_rotation[2]))
+
+func _capture_global_state() -> Dictionary:
+	return {
+		"credits": GlobalState.player_credits,
+		"cargo": GlobalState.cargo,
+		"cargo_type": GlobalState.cargo_type,
+		"cargo_special": GlobalState.cargo_special.duplicate(true),
+		"storage_ore": GlobalState.player_storage_ore,
+		"upgrades": GlobalState.current_upgrades.duplicate(true),
+		"reputations": GlobalState.reputations.duplicate(true),
+		"faction_kills": GlobalState.faction_kills.duplicate(true),
+	}
+
+func _apply_global_state(state: Dictionary) -> void:
+	GlobalState.player_credits = int(state.get("credits", 50))
+	GlobalState.current_upgrades = state.get("upgrades", GlobalState.current_upgrades).duplicate(true)
+	GlobalState.apply_upgrade_stats()
+	GlobalState.player_storage_ore = float(state.get("storage_ore", 0.0))
+	GlobalState.cargo_type = int(state.get("cargo_type", GlobalState.CargoType.EMPTY))
+	GlobalState.cargo_special = state.get("cargo_special", {}).duplicate(true)
+	GlobalState.cargo = float(state.get("cargo", 0.0))
+	GlobalState.reputations = state.get("reputations", GlobalState.reputations).duplicate(true)
+	GlobalState.faction_kills = state.get("faction_kills", GlobalState.faction_kills).duplicate(true)
+	GlobalState.cargo_changed.emit(GlobalState.cargo)
 
 func _run_jump_smoke_test() -> void:
 	await get_tree().process_frame
@@ -207,7 +398,12 @@ func _run_jump_smoke_test() -> void:
 		_fail_jump_smoke_test("Player state changed on the return jump.")
 		return
 
+	if "--save-smoke-test" in OS.get_cmdline_user_args():
+		if not await _run_save_smoke_assertions():
+			return
+
 	print("[JumpSmokeTest] PASS: two-way travel and player runtime state verified.")
+	delete_savegame()
 	get_tree().quit(0)
 
 func _position_player_for_gate_test(gate: Node3D) -> void:
@@ -218,4 +414,61 @@ func _position_player_for_gate_test(gate: Node3D) -> void:
 
 func _fail_jump_smoke_test(message: String) -> void:
 	push_error("[JumpSmokeTest] FAIL: " + message)
+	delete_savegame()
 	get_tree().quit(1)
+
+func _run_save_smoke_assertions() -> bool:
+	var asteroid: Node = null
+	for candidate in get_tree().get_nodes_in_group("asteroid"):
+		if get_active_system_root().is_ancestor_of(candidate):
+			asteroid = candidate
+			break
+	if not asteroid:
+		_fail_jump_smoke_test("Save test could not find an asteroid.")
+		return false
+
+	GlobalState.player_credits = 4321
+	GlobalState.cargo_type = GlobalState.CargoType.ORE
+	GlobalState.cargo = 27.0
+	QuestManager.active_quest = {
+		"title": "Save Test Contract",
+		"objective_type": "DELIVER_ORE",
+		"amount_required": 40.0,
+		"partial_delivered": 11.0,
+		"faction": "zenith",
+	}
+	asteroid.set("resources", 123.0)
+	record_persistent_entity_state(asteroid)
+	if not save_game():
+		_fail_jump_smoke_test("Save file could not be written.")
+		return false
+
+	GlobalState.player_credits = 1
+	GlobalState.cargo = 0.0
+	GlobalState.cargo_type = GlobalState.CargoType.EMPTY
+	QuestManager.active_quest = {}
+	asteroid.set("resources", 299.0)
+	if not await load_game():
+		_fail_jump_smoke_test("Save file could not be loaded.")
+		return false
+	if GlobalState.player_credits != 4321 or not is_equal_approx(GlobalState.cargo, 27.0):
+		_fail_jump_smoke_test("Global player state did not restore.")
+		return false
+	if QuestManager.active_quest.get("title", "") != "Save Test Contract":
+		_fail_jump_smoke_test("Quest state did not restore.")
+		return false
+	if not is_equal_approx(float(asteroid.get("resources")), 123.0):
+		_fail_jump_smoke_test("Asteroid state did not restore.")
+		return false
+	if _is_valid_save_data({"version": SAVE_VERSION}) or _is_valid_save_data({
+		"version": SAVE_VERSION + 1,
+		"current_system_id": "start_system",
+		"player": {},
+		"global": {},
+		"quest": {},
+		"systems": {},
+	}):
+		_fail_jump_smoke_test("Malformed or unsupported save data was accepted.")
+		return false
+	print("[SaveSmokeTest] PASS: player, quest, system state, and validation verified.")
+	return true

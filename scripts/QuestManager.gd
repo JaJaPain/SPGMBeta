@@ -158,7 +158,8 @@ func accept_quest(quest_data: Dictionary, selected_choice: Dictionary):
 		"reward_credits_multiplier": reward_mult,
 		"reward_credits": reward_credits,
 		"choice_text_selected": selected_choice.get("text", ""),
-		"agent_response": consequence.get("dialogue_response", "")
+		"agent_response": consequence.get("dialogue_response", ""),
+		"system_id": GlobalState.current_system_id,
 	}
 	
 	if type == "KILL_SHIPS":

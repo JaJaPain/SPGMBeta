@@ -265,14 +265,14 @@ are absent.
 
 ### Phase 6: Session And Disk State
 
-- [ ] Capture and restore hull, shields, transform, and player runtime state.
-- [ ] Add stable IDs to meaningful system entities.
-- [ ] Capture mined and destroyed persistent entity state.
-- [ ] Preserve quest target state across systems.
-- [ ] Add versioned JSON save and load support.
-- [ ] Autosave after arrival and docking.
-- [ ] Verify missing, old, and malformed save handling.
-- [ ] Review the complete Phase 6 Git diff.
+- [x] Capture and restore hull, shields, transform, and player runtime state.
+- [x] Add stable IDs to meaningful system entities.
+- [x] Capture mined and destroyed persistent entity state.
+- [x] Preserve quest target state across systems.
+- [x] Add versioned JSON save and load support.
+- [x] Autosave after arrival and docking.
+- [x] Verify missing, old, and malformed save handling.
+- [x] Review the complete Phase 6 Git diff.
 
 ### Phase 7: Final Verification
 

@@ -1421,6 +1421,9 @@ func _create_death_screen():
 	death_panel.visible = false
 
 func _restart_game():
+	var game_root := get_tree().current_scene
+	if game_root and game_root.has_method("delete_savegame"):
+		game_root.delete_savegame()
 	# Reset all autoload state BEFORE reloading — prevents dangling callbacks
 	# (e.g. LLMInterface firing into a freed UIManager) from crashing the new session
 	LLMInterface.reset_for_restart()

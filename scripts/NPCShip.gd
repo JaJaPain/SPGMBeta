@@ -5,6 +5,7 @@ extends CharacterBody3D
 @export var speed: float = 10.0
 @export var rotation_speed: float = 2.2
 @export var is_reinforcement: bool = false
+@export var persistent_id: String = ""
 
 var health: float = 50.0
 var patrol_center: Vector3
@@ -371,6 +372,8 @@ func take_damage(amount: float, attacker_faction: String = ""):
 
 func die():
 	destroyed = true
+	if get_meta("is_quest_target", false):
+		_record_persistent_state()
 	AudioManager.play_explosion(global_position)
 	
 	# Spawn wreckage
@@ -414,6 +417,38 @@ func die():
 	
 	# Play explosion FX here if desired
 	queue_free()
+
+func get_persistent_id() -> String:
+	if persistent_id != "":
+		return persistent_id
+	return name
+
+func capture_state() -> Dictionary:
+	return {
+		"type": "mission_ship",
+		"destroyed": destroyed,
+		"health": health,
+		"faction": faction,
+		"position": [global_position.x, global_position.y, global_position.z],
+		"rotation": [global_rotation.x, global_rotation.y, global_rotation.z],
+	}
+
+func restore_state(state: Dictionary) -> void:
+	if bool(state.get("destroyed", false)):
+		queue_free()
+		return
+	health = clampf(float(state.get("health", max_health)), 0.0, max_health)
+	var saved_position: Array = state.get("position", [])
+	if saved_position.size() == 3:
+		global_position = Vector3(float(saved_position[0]), float(saved_position[1]), float(saved_position[2]))
+	var saved_rotation: Array = state.get("rotation", [])
+	if saved_rotation.size() == 3:
+		global_rotation = Vector3(float(saved_rotation[0]), float(saved_rotation[1]), float(saved_rotation[2]))
+
+func _record_persistent_state() -> void:
+	var game_root := get_tree().current_scene
+	if game_root and game_root.has_method("record_persistent_entity_state"):
+		game_root.record_persistent_entity_state(self)
 
 func _apply_reputation_changes():
 	# Minor factions don't affect reputation when killed
