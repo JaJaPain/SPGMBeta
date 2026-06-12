@@ -276,15 +276,17 @@ are absent.
 
 ### Phase 7: Final Verification
 
-- [ ] Run `git diff --check`.
-- [ ] Review the final aggregate diff for accidental overwrites.
-- [ ] Run Godot headless import.
-- [ ] Run script and scene parse verification.
-- [ ] Start the project long enough to catch startup runtime errors.
-- [ ] Verify two-way jumping repeatedly.
-- [ ] Verify restart, pause, targeting, combat, cargo, upgrades, quests, docking,
-      autosave, and restored state.
-- [ ] Confirm final Git status and report anything not committed or pushed.
+- [x] Run `git diff --check`.
+- [x] Review the final aggregate diff for accidental overwrites.
+- [x] Run Godot headless import.
+- [x] Run script and scene parse verification.
+- [x] Start the project long enough to catch startup runtime errors.
+- [x] Verify two-way jumping repeatedly with the automated smoke test.
+- [x] Verify save validation and player, quest, and system-state restoration with
+      the automated smoke test.
+- [ ] Complete the hands-on gameplay pass for restart, pause, targeting, combat,
+      cargo, upgrades, quests, docking, autosave, and restored state.
+- [x] Confirm final Git status and report anything not committed or pushed.
 
 ## Completion Criteria
 
