@@ -220,14 +220,14 @@ are absent.
 
 ### Phase 2: Reusable Gate And Test System
 
-- [ ] Build the reusable `jump_gate.tscn` wrapper.
-- [ ] Calibrate model center, scale, and orientation.
-- [ ] Add structural collision, activation volume, portal, and arrival marker.
-- [ ] Add gate metadata and stable IDs.
-- [ ] Place an outbound gate in the starting system.
-- [ ] Build `system_test.tscn` with one planet and a paired return gate.
-- [ ] Run scene parse and startup checks.
-- [ ] Review the complete Phase 2 Git diff.
+- [x] Build the reusable `jump_gate.tscn` wrapper.
+- [x] Calibrate model center, scale, and orientation.
+- [x] Add structural collision, activation volume, portal, and arrival marker.
+- [x] Add gate metadata and stable IDs.
+- [x] Place an outbound gate in the starting system.
+- [x] Build `system_test.tscn` with one planet and a paired return gate.
+- [x] Run scene parse and startup checks.
+- [x] Review the complete Phase 2 Git diff.
 
 ### Phase 3: System Loading And Two-Way Travel
 
