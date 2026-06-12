@@ -38,7 +38,7 @@ light_color = Color(0.72, 0.82, 1, 1)
 light_energy = 1.45
 shadow_enabled = true
 
-[node name="TestPlanet" type="StaticBody3D" parent="."]
+[node name="TestPlanet" type="StaticBody3D" parent="." groups=["celestial"]]
 position = Vector3(850, 0, -650)
 collision_layer = 1
 collision_mask = 6

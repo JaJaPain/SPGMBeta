@@ -30,7 +30,7 @@ var nav_mode: String = "MANUAL":
 	set(val):
 		if val != nav_mode:
 			nav_mode = val
-			if val in ["APPROACH", "APPROACH_1K", "ORBIT", "MINE", "ATTACK", "DOCK"]:
+			if val in ["APPROACH", "APPROACH_1K", "JUMP_APPROACH", "ORBIT", "MINE", "ATTACK", "DOCK"]:
 				is_aligning = false
 				is_aligning = true
 
@@ -68,7 +68,7 @@ func _ready():
 func _on_target_changed(new_target: Node3D):
 	if new_target == null:
 		mining_laser.visible = false
-		if nav_mode in ["APPROACH", "APPROACH_1K", "ORBIT", "MINE", "ATTACK", "DOCK"]:
+		if nav_mode in ["APPROACH", "APPROACH_1K", "JUMP_APPROACH", "ORBIT", "MINE", "ATTACK", "DOCK"]:
 			nav_mode = "MANUAL"
 			target_position = null
 
@@ -83,7 +83,7 @@ func _unhandled_input(event: InputEvent):
 	if event.is_action_pressed("override_approach"):
 		var t = GlobalState.active_target
 		if t and is_instance_valid(t):
-			nav_mode = "APPROACH"
+			nav_mode = "JUMP_APPROACH" if t.is_in_group("jumpgate") else "APPROACH"
 			var ui = GlobalState.get_ui_manager()
 			if ui and ui.has_method("show_target_marker"):
 				ui.show_target_marker(t.global_position)
@@ -101,6 +101,11 @@ func _unhandled_input(event: InputEvent):
 				nav_mode = "MINE"
 			elif t.is_in_group("station"):
 				nav_mode = "DOCK"
+			elif t.is_in_group("jumpgate"):
+				var ui = GlobalState.get_ui_manager()
+				if ui and ui.has_method("activate_selected_jumpgate"):
+					ui.activate_selected_jumpgate()
+				return
 			else:
 				nav_mode = "ATTACK"
 			var ui = GlobalState.get_ui_manager()
@@ -294,6 +299,9 @@ func _physics_process(delta: float):
 				if dist < 1000.0:
 					target_position = null
 					nav_mode = "MANUAL"
+
+			"JUMP_APPROACH":
+				target_position = active_target.global_position
 					
 			"MINE":
 				# Refuse to mine when a special item is loaded OR when
@@ -344,7 +352,7 @@ func _physics_process(delta: float):
 				target_position = global_position + des_dir * 10.0
 	else:
 		mining_laser.visible = false
-		if nav_mode in ["APPROACH", "APPROACH_1K", "ORBIT", "MINE", "ATTACK", "DOCK"]:
+		if nav_mode in ["APPROACH", "APPROACH_1K", "JUMP_APPROACH", "ORBIT", "MINE", "ATTACK", "DOCK"]:
 			nav_mode = "MANUAL"
 			target_position = null
 
@@ -423,6 +431,8 @@ func _physics_process(delta: float):
 				elif active_target.is_in_group("asteroid") or active_target.is_in_group("ship"):
 					target_stop_dist = 60.0
 				target_speed = clamp((dist - target_stop_dist) * 4.0, -speed_limit, speed_limit)
+			elif nav_mode == "JUMP_APPROACH":
+				target_speed = clamp((dist - 85.0) * 4.0, -speed_limit, speed_limit)
 			elif nav_mode == "MINE" and active_target.is_in_group("asteroid"):
 				# Keep 35m from mined asteroids to prevent crashing
 				target_speed = clamp((dist - 35.0) * 3.0, -speed_limit, speed_limit)

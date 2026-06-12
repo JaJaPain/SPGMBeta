@@ -243,14 +243,14 @@ are absent.
 
 ### Phase 4: Gate UI And Activation
 
-- [ ] Show jumpgates in the overview list.
-- [ ] Add jumpgate target-panel labeling and destination details.
-- [ ] Add `Approach Gate`.
-- [ ] Add `Initiate Jump`.
-- [ ] Enforce distance, alignment, alive, undocked, and transition-state checks.
-- [ ] Lock navigation, targeting, and combat input during travel.
-- [ ] Show clear status and refusal messages.
-- [ ] Review the complete Phase 4 Git diff.
+- [x] Show jumpgates in the overview list.
+- [x] Add jumpgate target-panel labeling and destination details.
+- [x] Add `Approach Gate`.
+- [x] Add `Initiate Jump`.
+- [x] Enforce distance, alignment, alive, undocked, and transition-state checks.
+- [x] Lock navigation, targeting, and combat input during travel.
+- [x] Show clear status and refusal messages.
+- [x] Review the complete Phase 4 Git diff.
 
 ### Phase 5: Hyperspace Effects
 

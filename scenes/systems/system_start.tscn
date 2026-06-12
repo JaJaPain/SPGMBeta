@@ -55,7 +55,7 @@ light_color = Color(1, 0.980392, 0.941176, 1)
 light_energy = 1.2
 shadow_enabled = true
 
-[node name="GasGiant" type="StaticBody3D" parent="."]
+[node name="GasGiant" type="StaticBody3D" parent="." groups=["celestial"]]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1500, 0, 1500)
 collision_layer = 1
 collision_mask = 6
@@ -66,7 +66,7 @@ mesh = SubResource("SphereMesh_gas")
 [node name="CollisionShape3D" type="CollisionShape3D" parent="GasGiant"]
 shape = SubResource("SphereShape3D_gas")
 
-[node name="RockyPlanet" type="StaticBody3D" parent="."]
+[node name="RockyPlanet" type="StaticBody3D" parent="." groups=["celestial"]]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1200, 0, 1800)
 collision_layer = 1
 collision_mask = 6

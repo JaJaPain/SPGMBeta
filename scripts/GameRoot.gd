@@ -28,10 +28,29 @@ func get_active_system_root() -> Node3D:
 func can_begin_jump() -> bool:
 	return not transition_in_progress and not jump_request_pending and Time.get_ticks_msec() >= arrival_cooldown_until_msec
 
-func request_gate_jump(gate: Node3D) -> bool:
+func get_jump_block_reason(gate: Node3D) -> String:
 	if not gate or not is_instance_valid(gate) or not gate.is_in_group("jumpgate"):
-		return false
-	if not can_begin_jump():
+		return "No valid jumpgate selected."
+	if transition_in_progress or jump_request_pending:
+		return "Jump sequence already in progress."
+	if Time.get_ticks_msec() < arrival_cooldown_until_msec:
+		return "Gate drive is recalibrating after arrival."
+	if not player or not is_instance_valid(player) or player.get("destroyed"):
+		return "Ship is not flight capable."
+	if player.get("is_docked"):
+		return "Undock before activating a jumpgate."
+	if GlobalState.active_target != gate:
+		return "Target the jumpgate before activation."
+	if not gate.call("is_player_in_activation_range"):
+		return "Move within jump range before activation."
+	var to_gate := (gate.global_position - player.global_position).normalized()
+	var ship_forward := -player.global_transform.basis.z.normalized()
+	if ship_forward.dot(to_gate) < cos(deg_to_rad(12.0)):
+		return "Align the ship with the jumpgate."
+	return ""
+
+func request_gate_jump(gate: Node3D) -> bool:
+	if get_jump_block_reason(gate) != "":
 		return false
 	var destination_system: String = gate.get("destination_system_id")
 	var destination_gate: String = gate.get("destination_gate_id")
@@ -130,7 +149,15 @@ func _run_jump_smoke_test() -> void:
 	player.set("current_shield", starting_shield)
 
 	var outbound_gate := _find_gate(get_active_system_root(), "start_to_test")
-	if not outbound_gate or not request_gate_jump(outbound_gate):
+	if not outbound_gate:
+		_fail_jump_smoke_test("Outbound gate was not found.")
+		return
+	GlobalState.active_target = outbound_gate
+	if get_jump_block_reason(outbound_gate) != "Move within jump range before activation.":
+		_fail_jump_smoke_test("Out-of-range jump was not rejected.")
+		return
+	_position_player_for_gate_test(outbound_gate)
+	if get_jump_block_reason(outbound_gate) != "" or not request_gate_jump(outbound_gate):
 		_fail_jump_smoke_test("Could not request outbound jump.")
 		return
 	await system_changed
@@ -151,6 +178,7 @@ func _run_jump_smoke_test() -> void:
 		return
 
 	arrival_cooldown_until_msec = 0
+	_position_player_for_gate_test(return_gate)
 	if not request_gate_jump(return_gate):
 		_fail_jump_smoke_test("Could not request return jump.")
 		return
@@ -164,6 +192,12 @@ func _run_jump_smoke_test() -> void:
 
 	print("[JumpSmokeTest] PASS: two-way travel and player runtime state verified.")
 	get_tree().quit(0)
+
+func _position_player_for_gate_test(gate: Node3D) -> void:
+	GlobalState.active_target = gate
+	player.global_position = gate.global_position + gate.global_transform.basis.z.normalized() * 80.0
+	player.look_at(gate.global_position, Vector3.UP)
+	player.velocity = Vector3.ZERO
 
 func _fail_jump_smoke_test(message: String) -> void:
 	push_error("[JumpSmokeTest] FAIL: " + message)

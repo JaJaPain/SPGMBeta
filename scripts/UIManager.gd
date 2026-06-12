@@ -546,9 +546,9 @@ func _create_target_panel():
 	app_btn.text = "Fly to"
 	app_btn.pressed.connect(func():
 		if GlobalState.player:
-			GlobalState.player.set("nav_mode", "APPROACH")
 			var t = GlobalState.active_target
 			if t and is_instance_valid(t):
+				GlobalState.player.set("nav_mode", "JUMP_APPROACH" if t.is_in_group("jumpgate") else "APPROACH")
 				show_target_marker(t.global_position)
 	)
 	target_action_box.add_child(app_btn)
@@ -573,6 +573,8 @@ func _create_target_panel():
 				GlobalState.player.set("nav_mode", "MINE")
 			elif t.is_in_group("station"):
 				GlobalState.player.set("nav_mode", "DOCK")
+			elif t.is_in_group("jumpgate"):
+				activate_selected_jumpgate()
 			else:
 				GlobalState.player.set("nav_mode", "ATTACK")
 			show_target_marker(t.global_position)
@@ -1148,9 +1150,9 @@ func _create_context_menu():
 	action_app.text = "Fly to"
 	action_app.pressed.connect(func():
 		if GlobalState.player:
-			GlobalState.player.set("nav_mode", "APPROACH")
 			var t = GlobalState.active_target
 			if t and is_instance_valid(t):
+				GlobalState.player.set("nav_mode", "JUMP_APPROACH" if t.is_in_group("jumpgate") else "APPROACH")
 				show_target_marker(t.global_position)
 		context_panel.visible = false
 	)
@@ -1179,6 +1181,8 @@ func _create_context_menu():
 				GlobalState.player.set("nav_mode", "MINE")
 			elif t.is_in_group("station"):
 				GlobalState.player.set("nav_mode", "DOCK")
+			elif t.is_in_group("jumpgate"):
+				activate_selected_jumpgate()
 			else:
 				GlobalState.player.set("nav_mode", "ATTACK")
 			show_target_marker(t.global_position)
@@ -1488,6 +1492,8 @@ func update_overview_list(entities: Array):
 			var type_str = "Celestial"
 			if entity.is_in_group("asteroid"):
 				type_str = "Asteroid"
+			elif entity.is_in_group("jumpgate"):
+				type_str = "Jumpgate"
 			elif entity.is_in_group("station"):
 				# Outposts show as "Outpost" so the player can tell them apart
 				# from the main system space station. station_type defaults to
@@ -1533,6 +1539,8 @@ func update_overview_list(entities: Array):
 			var row_color: Color
 			if type_str == "Space Station" or type_str == "Outpost":
 				row_color = Color(0.25, 0.95, 0.45)   # Bright docking green
+			elif type_str == "Jumpgate":
+				row_color = Color(0.2, 0.85, 1.0)
 			elif type_str == "Celestial":
 				row_color = Color(0.35, 0.65, 1.0)    # Soft celestial blue
 			else:
@@ -1657,17 +1665,21 @@ func _on_target_changed(new_target: Node3D):
 		elif new_target.is_in_group("station"):
 			type_str = "Station"
 			icon_index = 2
+		elif new_target.is_in_group("jumpgate"):
+			type_str = "Jumpgate to " + str(new_target.get("destination_display_name"))
+			icon_index = 3
 		elif new_target.is_in_group("ship"):
 			type_str = "Hostile NPCShip"
 			icon_index = 0
 		elif new_target.is_in_group("wreckage"):
 			type_str = "Wreckage"
 			icon_index = 4
-		elif new_target.name == "GasGiant" or new_target.name == "RockyPlanet":
+		elif new_target.is_in_group("celestial"):
 			type_str = "Planet"
 			icon_index = 3
 			
-		target_label.text = new_target.name + " [" + type_str + "]"
+		var target_name = new_target.get("display_name") if new_target.get("display_name") else new_target.name
+		target_label.text = target_name + " [" + type_str + "]"
 		
 		# Set target icon
 		if target_icon and icons_sheet:
@@ -1686,6 +1698,9 @@ func _on_target_changed(new_target: Node3D):
 				target_action_btn.visible = true
 			elif new_target.is_in_group("station"):
 				target_action_btn.text = "Dock at Station"
+				target_action_btn.visible = true
+			elif new_target.is_in_group("jumpgate"):
+				target_action_btn.text = "Initiate Jump"
 				target_action_btn.visible = true
 			elif new_target.is_in_group("ship"):
 				target_action_btn.text = "Attack Hostile"
@@ -2622,11 +2637,32 @@ func show_context_menu(entity: Node3D):
 		elif entity.is_in_group("station"):
 			context_action_btn.text = "Dock at Station"
 			context_action_btn.visible = true
+		elif entity.is_in_group("jumpgate"):
+			context_action_btn.text = "Initiate Jump"
+			context_action_btn.visible = true
 		elif entity.is_in_group("ship"):
 			context_action_btn.text = "Attack Hostile"
 			context_action_btn.visible = true
 		else:
 			context_action_btn.visible = false
+
+func activate_selected_jumpgate() -> void:
+	var gate := GlobalState.active_target
+	if not gate or not is_instance_valid(gate) or not gate.is_in_group("jumpgate"):
+		show_hud_warning("No jumpgate selected.")
+		return
+	var game_root := get_tree().current_scene
+	if not game_root or not game_root.has_method("get_jump_block_reason"):
+		show_hud_warning("Jump control is unavailable.")
+		return
+	var block_reason: String = game_root.get_jump_block_reason(gate)
+	if block_reason != "":
+		show_hud_warning(block_reason)
+		return
+	var destination := str(gate.get("destination_display_name"))
+	show_hud_info("Jump sequence initiated: " + destination)
+	if not gate.call("request_jump"):
+		show_hud_warning("Jump request was not accepted.")
 
 func show_death_screen():
 	death_panel.visible = true
@@ -2774,6 +2810,12 @@ func _on_selection_marker_draw():
 		radius_3d = 600.0
 	elif target.name == "RockyPlanet":
 		radius_3d = 250.0
+	elif target.is_in_group("jumpgate"):
+		radius_3d = 58.0
+	elif target.is_in_group("celestial"):
+		var shape_node := target.find_child("CollisionShape3D", true, false) as CollisionShape3D
+		if shape_node and shape_node.shape is SphereShape3D:
+			radius_3d = shape_node.shape.radius * target.scale.x
 	elif target.is_in_group("station"):
 		radius_3d = 22.0 * target.scale.x
 	elif target.is_in_group("ship"):
@@ -2878,10 +2920,9 @@ func refresh_overview():
 	for node in get_tree().get_nodes_in_group("station"):
 		if is_instance_valid(node) and system_root.is_ancestor_of(node):
 			entities.append(node)
-	var gas_giant = system_root.get_node_or_null("GasGiant")
-	if gas_giant: entities.append(gas_giant)
-	var rocky_planet = system_root.get_node_or_null("RockyPlanet")
-	if rocky_planet: entities.append(rocky_planet)
+	for node in get_tree().get_nodes_in_group("celestial"):
+		if is_instance_valid(node) and system_root.is_ancestor_of(node):
+			entities.append(node)
 
 	
 	# Add Asteroids
@@ -2896,6 +2937,9 @@ func refresh_overview():
 			
 	# Add Wreckage
 	for node in get_tree().get_nodes_in_group("wreckage"):
+		if is_instance_valid(node) and system_root.is_ancestor_of(node):
+			entities.append(node)
+	for node in get_tree().get_nodes_in_group("jumpgate"):
 		if is_instance_valid(node) and system_root.is_ancestor_of(node):
 			entities.append(node)
 			
