@@ -10,6 +10,7 @@ const ARRIVAL_COOLDOWN_SECONDS := 2.5
 
 @onready var system_container: Node3D = $SystemContainer
 @onready var player: CharacterBody3D = $PlayerShip
+@onready var transition_fx: CanvasLayer = $JumpTransitionFX
 
 var transition_in_progress: bool = false
 var jump_request_pending: bool = false
@@ -84,6 +85,18 @@ func _change_system(destination_system_id: String, arrival_gate_id: String) -> v
 	jump_request_pending = false
 	transition_in_progress = true
 	_prepare_player_for_system_change()
+	var source_gate := GlobalState.active_target
+	var camera := player.get_node_or_null("CameraPivot/Camera3D") as Camera3D
+	var original_fov := camera.fov if camera else 70.0
+	var effect_duration := 0.05 if DisplayServer.get_name() == "headless" else 1.2
+	if source_gate and is_instance_valid(source_gate) and source_gate.has_method("begin_jump_charge"):
+		source_gate.begin_jump_charge(effect_duration)
+		create_tween().tween_property(player, "global_position", source_gate.global_position, effect_duration).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	AudioManager.play_jump_spool()
+	if camera:
+		create_tween().tween_property(camera, "fov", min(original_fov + 24.0, 120.0), effect_duration)
+	await transition_fx.play_entry(effect_duration)
+	AudioManager.play_jump_transit()
 	GlobalState.active_target = null
 	GlobalState.active_system_entities.clear()
 
@@ -101,6 +114,10 @@ func _change_system(destination_system_id: String, arrival_gate_id: String) -> v
 	var arrival_transform: Transform3D = arrival_gate.call("get_arrival_transform")
 	player.global_transform = arrival_transform
 
+	AudioManager.play_jump_arrival()
+	await transition_fx.play_exit(0.05 if DisplayServer.get_name() == "headless" else 0.9)
+	if camera:
+		camera.fov = original_fov
 	_prepare_player_after_system_change()
 	arrival_cooldown_until_msec = Time.get_ticks_msec() + int(ARRIVAL_COOLDOWN_SECONDS * 1000.0)
 	transition_in_progress = false

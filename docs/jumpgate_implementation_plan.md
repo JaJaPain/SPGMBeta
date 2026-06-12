@@ -254,14 +254,14 @@ are absent.
 
 ### Phase 5: Hyperspace Effects
 
-- [ ] Animate gate portal energy, lights, and emissive intensity.
-- [ ] Add spool-up and ship acceleration.
-- [ ] Add camera FOV change and entry flash.
-- [ ] Add the full-screen hyperspace tunnel shader.
-- [ ] Load the destination while the tunnel obscures the scene.
-- [ ] Add emergence flash and restore camera/control state.
-- [ ] Add audio hooks with fallback behavior.
-- [ ] Review the complete Phase 5 Git diff.
+- [x] Animate gate portal energy, lights, and emissive intensity.
+- [x] Add spool-up and ship acceleration.
+- [x] Add camera FOV change and entry flash.
+- [x] Add the full-screen hyperspace tunnel shader.
+- [x] Load the destination while the tunnel obscures the scene.
+- [x] Add emergence flash and restore camera/control state.
+- [x] Add audio hooks with fallback behavior.
+- [x] Review the complete Phase 5 Git diff.
 
 ### Phase 6: Session And Disk State
 
