@@ -231,15 +231,15 @@ are absent.
 
 ### Phase 3: System Loading And Two-Way Travel
 
-- [ ] Add a system manager.
-- [ ] Load and unload systems beneath `SystemContainer`.
-- [ ] Preserve the player and UI between systems.
-- [ ] Clear stale targets and references before unloading.
-- [ ] Resolve the paired destination gate and arrival marker.
-- [ ] Place and orient the player safely on arrival.
-- [ ] Add arrival cooldown protection.
-- [ ] Verify repeated start-to-test and test-to-start travel.
-- [ ] Review the complete Phase 3 Git diff.
+- [x] Add a system manager.
+- [x] Load and unload systems beneath `SystemContainer`.
+- [x] Preserve the player and UI between systems.
+- [x] Clear stale targets and references before unloading.
+- [x] Resolve the paired destination gate and arrival marker.
+- [x] Place and orient the player safely on arrival.
+- [x] Add arrival cooldown protection.
+- [x] Verify repeated start-to-test and test-to-start travel.
+- [x] Review the complete Phase 3 Git diff.
 
 ### Phase 4: Gate UI And Activation
 

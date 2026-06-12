@@ -28,6 +28,12 @@ func is_player_in_activation_range() -> bool:
 	var player := GlobalState.player
 	return player != null and is_instance_valid(player) and global_position.distance_to(player.global_position) <= activation_range
 
+func request_jump() -> bool:
+	var game_root := get_tree().current_scene
+	if not game_root or not game_root.has_method("request_gate_jump"):
+		return false
+	return game_root.request_gate_jump(self)
+
 func _center_and_scale_model() -> void:
 	var model_root := model_anchor.get_child(0) as Node3D
 	if not model_root:
