@@ -778,6 +778,7 @@ func spawn_reinforcement(faction_name: String):
 		var npc = npc_scene.instantiate()
 		npc.faction = faction_name
 		npc.is_reinforcement = true
+		npc.ship_role = "Gunner"
 		npc.speed = 11.0
 		npc.name = faction_name.to_upper() + "_EliteReinforcement_" + str(randi() % 1000)
 		
@@ -829,6 +830,7 @@ func spawn_mission_targets(faction_name: String, count: int):
 		var npc = npc_scene.instantiate()
 		npc.faction = faction_name
 		npc.is_reinforcement = false
+		npc.ship_role = ["Gunner", "Interceptor"].pick_random()
 		npc.name = faction_name.to_upper() + "_MissionTarget_" + str(randi() % 1000)
 		# Mark as a quest target so QuestManager can count survivors and
 		# decide when to spawn replacements after NPC kills.

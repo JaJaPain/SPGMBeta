@@ -7,6 +7,8 @@ const SYSTEM_SCENES: Dictionary = {
 	"test_system": preload("res://scenes/systems/system_test.tscn"),
 }
 const ARRIVAL_COOLDOWN_SECONDS := 2.5
+const JUMP_ENTRY_DURATION := 3.2
+const JUMP_EXIT_DURATION := 0.9
 const SAVE_VERSION := 1
 const SAVE_PATH := "user://savegame.json"
 const NPC_SHIP_SCENE := preload("res://scenes/npc_ship.tscn")
@@ -25,7 +27,9 @@ func _ready() -> void:
 	var system_root := system_container.get_child(0) as Node3D
 	GlobalState.active_system_root = system_root
 	GlobalState.current_system_id = "start_system"
-	if "--jump-smoke-test" in OS.get_cmdline_user_args():
+	if "--dock-smoke-test" in OS.get_cmdline_user_args():
+		call_deferred("_run_dock_smoke_test")
+	elif "--jump-smoke-test" in OS.get_cmdline_user_args():
 		call_deferred("_run_jump_smoke_test")
 	elif "--no-save-load" not in OS.get_cmdline_user_args():
 		call_deferred("_load_startup_save")
@@ -95,7 +99,7 @@ func _change_system(destination_system_id: String, arrival_gate_id: String) -> v
 	var source_gate := GlobalState.active_target
 	var camera := player.get_node_or_null("CameraPivot/Camera3D") as Camera3D
 	var original_fov := camera.fov if camera else 70.0
-	var effect_duration := 0.05 if DisplayServer.get_name() == "headless" else 1.2
+	var effect_duration := 0.05 if DisplayServer.get_name() == "headless" else JUMP_ENTRY_DURATION
 	if source_gate and is_instance_valid(source_gate) and source_gate.has_method("begin_jump_charge"):
 		source_gate.begin_jump_charge(effect_duration)
 		create_tween().tween_property(player, "global_position", source_gate.global_position, effect_duration).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
@@ -124,10 +128,13 @@ func _change_system(destination_system_id: String, arrival_gate_id: String) -> v
 	player.global_transform = arrival_transform
 	last_arrival_gate_id = arrival_gate_id
 
-	AudioManager.play_jump_arrival()
-	await transition_fx.play_exit(0.05 if DisplayServer.get_name() == "headless" else 0.9)
+	if player.has_method("sync_camera_to_ship"):
+		player.sync_camera_to_ship()
 	if camera:
 		camera.fov = original_fov
+	await transition_fx.hold_covered(1 if DisplayServer.get_name() == "headless" else 2)
+	AudioManager.play_jump_arrival()
+	await transition_fx.play_exit(0.05 if DisplayServer.get_name() == "headless" else JUMP_EXIT_DURATION)
 	_prepare_player_after_system_change()
 	arrival_cooldown_until_msec = Time.get_ticks_msec() + int(ARRIVAL_COOLDOWN_SECONDS * 1000.0)
 	transition_in_progress = false
@@ -217,6 +224,7 @@ func _restore_system_state(system_id: String, system_root: Node3D) -> void:
 			npc.name = entity_id
 			npc.persistent_id = entity_id
 			npc.faction = str(entity_state.get("faction", "zenith"))
+			npc.ship_role = str(entity_state.get("ship_role", "Gunner"))
 			npc.set_meta("is_quest_target", true)
 			npc.add_to_group("persistent_entity")
 			system_root.add_child(npc)
@@ -384,6 +392,10 @@ func _run_jump_smoke_test() -> void:
 	if player.global_position.distance_to(expected_arrival) > 0.1:
 		_fail_jump_smoke_test("Player did not arrive at the paired gate marker.")
 		return
+	var camera_pivot := player.get_node_or_null("CameraPivot") as Node3D
+	if not camera_pivot or camera_pivot.global_position.distance_to(player.global_position) > 0.1:
+		_fail_jump_smoke_test("Camera pivot did not follow the player across the system change.")
+		return
 
 	arrival_cooldown_until_msec = 0
 	_position_player_for_gate_test(return_gate)
@@ -405,6 +417,65 @@ func _run_jump_smoke_test() -> void:
 	print("[JumpSmokeTest] PASS: two-way travel and player runtime state verified.")
 	delete_savegame()
 	get_tree().quit(0)
+
+func _run_dock_smoke_test() -> void:
+	await get_tree().process_frame
+	GlobalState.paused = false
+	var system_root := get_active_system_root()
+	var stations: Array[Node3D] = []
+	for candidate in get_tree().get_nodes_in_group("station"):
+		if candidate is Node3D and system_root.is_ancestor_of(candidate):
+			stations.append(candidate)
+	if stations.is_empty():
+		_fail_dock_smoke_test("No dockable stations were found.")
+		return
+
+	for station in stations:
+		var docking_position: Vector3 = station.global_position
+		if station.has_method("get_docking_position"):
+			docking_position = station.get_docking_position(player.global_position)
+		var approach_direction := (docking_position - station.global_position).normalized()
+		if approach_direction.length_squared() < 0.001:
+			approach_direction = Vector3.FORWARD
+		player.global_position = docking_position + approach_direction * 28.0
+		player.look_at(docking_position, Vector3.UP)
+		player.sync_camera_to_ship()
+		player.velocity = Vector3.ZERO
+		player.current_speed = 0.0
+		GlobalState.active_target = station
+		player.nav_mode = "DOCK"
+
+		for frame in range(240):
+			await get_tree().physics_frame
+			if player.is_docked:
+				break
+		if not player.is_docked:
+			var final_docking_position: Vector3 = station.get_docking_position(player.global_position) \
+				if station.has_method("get_docking_position") else station.global_position
+			_fail_dock_smoke_test(
+				"Docking did not complete for '%s': remaining=%.2f speed=%.2f mode=%s stuck=%.2f." % [
+					station.name,
+					player.global_position.distance_to(final_docking_position),
+					player.current_speed,
+					player.nav_mode,
+					player.dock_stuck_timer,
+				]
+			)
+			return
+
+		var ui := GlobalState.get_ui_manager()
+		if ui and ui.has_method("undock_player"):
+			ui.undock_player()
+		await get_tree().process_frame
+
+	print("[DockSmokeTest] PASS: all active-system dockables completed approach and docking.")
+	delete_savegame()
+	get_tree().quit(0)
+
+func _fail_dock_smoke_test(message: String) -> void:
+	push_error("[DockSmokeTest] FAIL: " + message)
+	delete_savegame()
+	get_tree().quit(1)
 
 func _position_player_for_gate_test(gate: Node3D) -> void:
 	GlobalState.active_target = gate

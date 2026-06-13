@@ -30,6 +30,10 @@ var nav_mode: String = "MANUAL":
 	set(val):
 		if val != nav_mode:
 			nav_mode = val
+			if val != "DOCK":
+				dock_stuck_timer = 0.0
+				last_dock_distance = INF
+				last_dock_target = null
 			if val in ["APPROACH", "APPROACH_1K", "JUMP_APPROACH", "ORBIT", "MINE", "ATTACK", "DOCK"]:
 				is_aligning = false
 				is_aligning = true
@@ -39,6 +43,9 @@ var fire_cooldown: float = 0.0
 # Camera controls
 var camera_aligned: bool = true
 var last_nav_mode: String = "MANUAL"
+var dock_stuck_timer: float = 0.0
+var last_dock_distance: float = INF
+var last_dock_target: Node3D = null
 var rmb_down_time: float = 0.0
 var last_target: Node3D = null
 var drones: Array[Node3D] = []
@@ -64,6 +71,9 @@ func _ready():
 	
 	# Create two orbiting drones
 	_create_drones()
+
+func sync_camera_to_ship() -> void:
+	camera_pivot.global_position = global_position
 
 func _on_target_changed(new_target: Node3D):
 	if new_target == null:
@@ -328,12 +338,31 @@ func _physics_process(delta: float):
 					perform_action(active_target, delta)
 					
 			"DOCK":
-				var dock_dist = 100.0 if active_target.is_in_group("station") else 40.0
-				if dist >= dock_dist:
-					target_position = active_target.global_position
+				var docking_position := _get_docking_position(active_target)
+				var distance_to_dock := global_position.distance_to(docking_position)
+				target_position = docking_position
+
+				if last_dock_target != active_target:
+					last_dock_target = active_target
+					last_dock_distance = distance_to_dock
+					dock_stuck_timer = 0.0
+				elif distance_to_dock < last_dock_distance - 0.1:
+					dock_stuck_timer = 0.0
+				elif distance_to_dock <= 35.0:
+					dock_stuck_timer += delta
 				else:
+					dock_stuck_timer = 0.0
+				last_dock_distance = distance_to_dock
+
+				if distance_to_dock <= 6.0 or dock_stuck_timer >= 1.5:
+					global_position = docking_position
+					velocity = Vector3.ZERO
+					current_speed = 0.0
 					target_position = null
 					nav_mode = "MANUAL"
+					dock_stuck_timer = 0.0
+					last_dock_distance = INF
+					last_dock_target = null
 					if active_target.has_method("dock_player"):
 						active_target.dock_player()
 						
@@ -439,6 +468,9 @@ func _physics_process(delta: float):
 			elif nav_mode == "ATTACK" and active_target.is_in_group("ship"):
 				# Keep 45m from attacked hostile NPC ships
 				target_speed = clamp((dist - 45.0) * 3.0, -speed_limit, speed_limit)
+			elif nav_mode == "DOCK":
+				var remaining_dock_distance := global_position.distance_to(target_position as Vector3)
+				target_speed = clamp(remaining_dock_distance * 2.0, 0.0, speed_limit)
 			
 		# Calculate acceleration taking cargo mass into account
 		var accel = 15.0 * GlobalState.acceleration_mult
@@ -513,6 +545,39 @@ func steer_towards(target_pos: Vector3, delta: float):
 			
 			rotation.y += diff_y * delta * current_rot_speed
 			rotation.x += diff_x * delta * current_rot_speed
+
+func _get_docking_position(dockable: Node3D) -> Vector3:
+	if dockable.has_method("get_docking_position"):
+		return dockable.get_docking_position(global_position)
+
+	var away_from_dockable := global_position - dockable.global_position
+	if away_from_dockable.length_squared() < 0.001:
+		away_from_dockable = dockable.global_transform.basis.z
+	return dockable.global_position + away_from_dockable.normalized() * _estimate_docking_distance(dockable)
+
+func _estimate_docking_distance(dockable: Node3D) -> float:
+	const MINIMUM_DOCKING_DISTANCE := 100.0
+	var collision := dockable.find_child("CollisionShape3D", true, false) as CollisionShape3D
+	if not collision or not collision.shape:
+		return MINIMUM_DOCKING_DISTANCE
+
+	var world_scale := collision.global_transform.basis.get_scale().abs()
+	var horizontal_radius := 0.0
+	if collision.shape is BoxShape3D:
+		var box := collision.shape as BoxShape3D
+		var half_extents := box.size * 0.5 * world_scale
+		horizontal_radius = Vector2(half_extents.x, half_extents.z).length()
+	elif collision.shape is SphereShape3D:
+		var sphere := collision.shape as SphereShape3D
+		horizontal_radius = sphere.radius * max(world_scale.x, world_scale.z)
+	elif collision.shape is CylinderShape3D:
+		var cylinder := collision.shape as CylinderShape3D
+		horizontal_radius = cylinder.radius * max(world_scale.x, world_scale.z)
+	elif collision.shape is CapsuleShape3D:
+		var capsule := collision.shape as CapsuleShape3D
+		horizontal_radius = capsule.radius * max(world_scale.x, world_scale.z)
+
+	return max(MINIMUM_DOCKING_DISTANCE, horizontal_radius + 16.0)
 
 func perform_action(target_node: Node3D, delta: float):
 	if target_node.is_in_group("asteroid"):

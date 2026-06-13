@@ -11,6 +11,7 @@ extends StaticBody3D
 @export var station_type: String = "outpost"   # UIManager reads this to show repair-only UI
 @export var model_path: String = ""            # e.g. "res://assets/space_station1.glb"
 @export var model_scale: float = 5.0           # Adjust per model to match main station size
+@export var minimum_docking_distance: float = 100.0
 
 var _model_loaded: bool = false
 
@@ -101,6 +102,22 @@ func _physics_process(delta: float) -> void:
 		return
 	# Gentle slow rotation so the station feels alive in space
 	rotate_y(0.025 * delta)
+
+func get_docking_position(approach_position: Vector3) -> Vector3:
+	var away_from_station := approach_position - global_position
+	if away_from_station.length_squared() < 0.001:
+		away_from_station = global_transform.basis.z
+	return global_position + away_from_station.normalized() * get_docking_distance()
+
+func get_docking_distance() -> float:
+	var collision := find_child("CollisionShape3D", true, false) as CollisionShape3D
+	if collision and collision.shape is BoxShape3D:
+		var box := collision.shape as BoxShape3D
+		var world_scale := collision.global_transform.basis.get_scale().abs()
+		var half_extents := box.size * 0.5 * world_scale
+		var horizontal_radius := Vector2(half_extents.x, half_extents.z).length()
+		return max(minimum_docking_distance, horizontal_radius + 16.0)
+	return minimum_docking_distance
 
 func dock_player() -> void:
 	var ui: Node = GlobalState.get_ui_manager()

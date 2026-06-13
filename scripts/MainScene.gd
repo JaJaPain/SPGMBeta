@@ -22,22 +22,22 @@ func _ready():
 	_spawn_asteroid_ring(rocky_planet.global_position, 370.0, 80.0, 45, "RockyBelt")
 	
 	# Spawn NPC Ships
-	_spawn_npc("zenith", Vector3(120, 0, 180), 12.0)
-	_spawn_npc("zenith", Vector3(-120, 0, 190), 12.0)
+	_spawn_npc("zenith", Vector3(120, 0, 180), 12.0, "Logistics")
+	_spawn_npc("zenith", Vector3(-120, 0, 190), 12.0, "MiningHauler")
 	
 	# Close hostiles for easy testing near start area
-	_spawn_npc("aurelia", Vector3(90, 0, 80), 14.0)
-	_spawn_npc("vanguard", Vector3(-90, 0, 80), 15.0)
+	_spawn_npc("aurelia", Vector3(90, 0, 80), 14.0, "Interceptor")
+	_spawn_npc("vanguard", Vector3(-90, 0, 80), 15.0, "Gunner")
 	
 	# Hostiles around Rocky Planet
-	_spawn_npc("aurelia", rocky_planet.global_position + Vector3(40, 0, 40), 14.0)
-	_spawn_npc("aurelia", rocky_planet.global_position + Vector3(-50, 0, -40), 14.0)
-	_spawn_npc("aurelia", rocky_planet.global_position + Vector3(0, 0, -80), 14.0)
+	_spawn_npc("aurelia", rocky_planet.global_position + Vector3(40, 0, 40), 14.0, "Gunner")
+	_spawn_npc("aurelia", rocky_planet.global_position + Vector3(-50, 0, -40), 14.0, "Interceptor")
+	_spawn_npc("aurelia", rocky_planet.global_position + Vector3(0, 0, -80), 14.0, "MiningHauler")
 	
 	# Hostiles around Gas Giant
-	_spawn_npc("vanguard", gas_giant.global_position + Vector3(50, 0, 50), 15.0)
-	_spawn_npc("vanguard", gas_giant.global_position + Vector3(-60, 0, -60), 15.0)
-	_spawn_npc("vanguard", gas_giant.global_position + Vector3(80, 0, 0), 15.0)
+	_spawn_npc("vanguard", gas_giant.global_position + Vector3(50, 0, 50), 15.0, "Gunner")
+	_spawn_npc("vanguard", gas_giant.global_position + Vector3(-60, 0, -60), 15.0, "Interceptor")
+	_spawn_npc("vanguard", gas_giant.global_position + Vector3(80, 0, 0), 15.0, "MiningHauler")
 
 	
 	# The persistent UI enters the tree after this system scene. Defer the first
@@ -81,10 +81,11 @@ func _spawn_asteroid_ring(center: Vector3, radius: float, width: float, count: i
 		add_child(ast)
 		ast.global_position = Vector3(x, y, z)
 
-func _spawn_npc(faction_name: String, pos: Vector3, npc_speed: float):
+func _spawn_npc(faction_name: String, pos: Vector3, npc_speed: float, role: String = ""):
 	var npc = npc_ship_scene.instantiate()
 	npc.faction = faction_name
 	npc.speed = npc_speed
+	npc.ship_role = role
 	npc.name = faction_name.to_upper() + "_Patrol_" + str(randi() % 1000)
 	add_child(npc)
 	npc.global_position = pos
@@ -203,6 +204,7 @@ func _spawn_npc_flying_in():
 	var npc = npc_ship_scene.instantiate()
 	npc.faction = faction_name
 	npc.speed = 13.0 # Slightly faster speed for flying in
+	npc.ship_role = ["Gunner", "Interceptor", "Logistics", "MiningHauler"].pick_random()
 	npc.name = faction_name.to_upper() + "_Incoming_" + str(randi() % 1000)
 	add_child(npc)
 	npc.global_position = spawn_pos

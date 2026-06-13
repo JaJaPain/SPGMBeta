@@ -13,7 +13,7 @@ extends StaticBody3D
 @onready var portal_surface: MeshInstance3D = $PortalSurface
 @onready var gate_light: OmniLight3D = $GateLight
 
-var portal_material: StandardMaterial3D
+var portal_material: ShaderMaterial
 var charge_tween: Tween
 
 func _ready() -> void:
@@ -21,8 +21,9 @@ func _ready() -> void:
 	if not GlobalState.active_system_entities.has(self):
 		GlobalState.active_system_entities.append(self)
 	_center_and_scale_model()
-	portal_material = portal_surface.get_active_material(0).duplicate() as StandardMaterial3D
+	portal_material = portal_surface.get_active_material(0).duplicate() as ShaderMaterial
 	portal_surface.material_override = portal_material
+	_set_portal_charge(0.0)
 	GlobalState.entities_changed.emit()
 
 func _process(delta: float) -> void:
@@ -56,7 +57,11 @@ func begin_jump_charge(duration: float = 1.0) -> void:
 	charge_tween.tween_property(gate_light, "light_energy", 18.0, duration)
 	charge_tween.tween_property(portal_surface, "scale", Vector3.ONE * 1.35, duration)
 	if portal_material:
-		charge_tween.tween_property(portal_material, "emission_energy_multiplier", 8.0, duration)
+		charge_tween.tween_method(Callable(self, "_set_portal_charge"), 0.0, 1.0, duration)
+
+func _set_portal_charge(value: float) -> void:
+	if portal_material:
+		portal_material.set_shader_parameter("charge", value)
 
 func _center_and_scale_model() -> void:
 	var model_root := model_anchor.get_child(0) as Node3D

@@ -571,7 +571,7 @@ func _create_target_panel():
 		if t and is_instance_valid(t) and GlobalState.player:
 			if t.is_in_group("asteroid"):
 				GlobalState.player.set("nav_mode", "MINE")
-			elif t.is_in_group("station"):
+			elif t.is_in_group("station") or t.has_method("dock_player"):
 				GlobalState.player.set("nav_mode", "DOCK")
 			elif t.is_in_group("jumpgate"):
 				activate_selected_jumpgate()
@@ -1179,7 +1179,7 @@ func _create_context_menu():
 		if t and is_instance_valid(t) and GlobalState.player:
 			if t.is_in_group("asteroid"):
 				GlobalState.player.set("nav_mode", "MINE")
-			elif t.is_in_group("station"):
+			elif t.is_in_group("station") or t.has_method("dock_player"):
 				GlobalState.player.set("nav_mode", "DOCK")
 			elif t.is_in_group("jumpgate"):
 				activate_selected_jumpgate()
@@ -2913,36 +2913,41 @@ func _update_faction_rep_label(label_name: String, faction_id: String):
 	# Tooltip: full name + descriptor + current feeling + numeric value
 	lbl.tooltip_text = "%s (%s) — %s (%d)" % [info.name, info.descriptor, tier, rep_value]
 
+func _exit_tree() -> void:
+	if GlobalState.entities_changed.is_connected(refresh_overview):
+		GlobalState.entities_changed.disconnect(refresh_overview)
+
 func refresh_overview():
 	var entities: Array = []
 	var system_root := GlobalState.get_system_root()
-	if not system_root:
+	var scene_tree := get_tree()
+	if not system_root or not scene_tree:
 		return
 	
 	# Add ALL stations (main + outposts) by group — never hardcode node names
-	for node in get_tree().get_nodes_in_group("station"):
+	for node in scene_tree.get_nodes_in_group("station"):
 		if is_instance_valid(node) and system_root.is_ancestor_of(node):
 			entities.append(node)
-	for node in get_tree().get_nodes_in_group("celestial"):
+	for node in scene_tree.get_nodes_in_group("celestial"):
 		if is_instance_valid(node) and system_root.is_ancestor_of(node):
 			entities.append(node)
 
 	
 	# Add Asteroids
-	for node in get_tree().get_nodes_in_group("asteroid"):
+	for node in scene_tree.get_nodes_in_group("asteroid"):
 		if system_root.is_ancestor_of(node):
 			entities.append(node)
 		
 	# Add NPC Ships
-	for node in get_tree().get_nodes_in_group("ship"):
+	for node in scene_tree.get_nodes_in_group("ship"):
 		if node != GlobalState.player and is_instance_valid(node) and system_root.is_ancestor_of(node) and not node.get("destroyed"):
 			entities.append(node)
 			
 	# Add Wreckage
-	for node in get_tree().get_nodes_in_group("wreckage"):
+	for node in scene_tree.get_nodes_in_group("wreckage"):
 		if is_instance_valid(node) and system_root.is_ancestor_of(node):
 			entities.append(node)
-	for node in get_tree().get_nodes_in_group("jumpgate"):
+	for node in scene_tree.get_nodes_in_group("jumpgate"):
 		if is_instance_valid(node) and system_root.is_ancestor_of(node):
 			entities.append(node)
 			
